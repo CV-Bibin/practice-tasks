@@ -69,6 +69,7 @@ export default function SimulatorSearch20() {
   const [answers, setAnswers] = useState({});
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [score, setScore] = useState({ correct: 0, total: 0 });
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
 
   useEffect(() => {
     fetchTasks();
@@ -274,8 +275,8 @@ export default function SimulatorSearch20() {
       setCurrentTaskIndex(nextIndex);
       initializeAnswers(tasks[nextIndex]);
     } else {
-      alert("You have completed all available practice tasks!");
-      navigate("/dashboard");
+      // Show our custom box instead of the alert
+      setShowCompletionModal(true);
     }
   };
 
@@ -335,6 +336,21 @@ export default function SimulatorSearch20() {
 
   return (
     <div style={styles.container}>
+
+      {/* --- NEW: Custom Completion Box --- */}
+      {showCompletionModal && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalBox}>
+            <p style={styles.modalText}>no more tasks available</p>
+            <button style={styles.modalButton} onClick={() => navigate('/dashboard')}>
+              Return to Dashboard
+            </button>
+          </div>
+        </div>
+      )}
+
+
+      
       {/* TOP HEADER */}
       <header style={styles.topBar}>
         <div style={styles.topBarLeft}>
@@ -1106,4 +1122,9 @@ const styles = {
     fontWeight: "bold",
     marginTop: "4px",
   },
+
+  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
+  modalBox: { backgroundColor: '#ffffff', padding: '32px', borderRadius: '8px', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', textAlign: 'center', minWidth: '300px' },
+  modalText: { fontSize: '18px', color: '#1f2937', fontWeight: 'bold', marginBottom: '24px' },
+  modalButton: { backgroundColor: '#0ea5e9', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '4px', fontSize: '14px', cursor: 'pointer', fontWeight: 'bold', width: '100%' }
 };
