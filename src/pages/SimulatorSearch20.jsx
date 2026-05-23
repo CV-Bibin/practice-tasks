@@ -181,9 +181,28 @@ export default function SimulatorSearch20() {
     id: r.resultId, name: r.name, address: r.address, coords: `${r.lat}, ${r.lng}`
   }));
 
+
+// --- NEW: Dynamic Estimated Time Calculation ---
+  let totalEstSeconds = 0;
+  if (Object.keys(answers).length > 0) {
+    taskData.results.forEach(res => {
+      const raterAns = answers[res.resultId];
+      // If POI is closed, add 105 seconds (1m 45s). Otherwise, add 190 seconds (3m 10s).
+      if (raterAns && raterAns.poiClosed) {
+        totalEstSeconds += 105;
+      } else {
+        totalEstSeconds += 190;
+      }
+    });
+  }
+  const estMinutes = Math.floor(totalEstSeconds / 60);
+  const estSeconds = totalEstSeconds % 60;
+  // -----------------------------------------------
+
+
   return (
     <div style={styles.container}>
-      {/* TOP HEADER */}
+     {/* TOP HEADER */}
       <header style={styles.topBar}>
         <div style={styles.topBarLeft}>
           <div style={styles.headerBlock}>
@@ -194,7 +213,10 @@ export default function SimulatorSearch20() {
             <span style={styles.headerLabel}>Task ID</span>
             <span style={styles.headerValue}>{currentTask.id}</span>
           </div>
-          {/* Estimated Time block completely removed from here */}
+          <div style={styles.headerBlock}>
+            <span style={styles.headerLabel}>Estimated Rating Time</span>
+            <span style={styles.headerValue}>{estMinutes} minutes {estSeconds} seconds</span>
+          </div>
         </div>
         
         <div style={styles.topBarRight}>
