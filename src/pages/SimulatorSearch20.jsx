@@ -5,6 +5,26 @@ import { db } from '../config/firebase';
 import TaskMapPreview from '../components/shared/TaskMapPreview';
 import { pinColors } from '../components/shared/TaskMapPreview';
 
+// --- MATH HELPER: Calculates distance between two coordinates in kilometers ---
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  if (lat1 == null || lon1 == null || lat2 == null || lon2 == null || isNaN(lat1) || isNaN(lon1) || isNaN(lat2) || isNaN(lon2)) {
+    return "N/A";
+  }
+  
+  const R = 6371; // Radius of the Earth in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distance = R * c;
+  
+  return distance.toFixed(3); // Formats to 3 decimal places (e.g. 0.920)
+};
+
 export default function SimulatorSearch20() {
   const navigate = useNavigate();
   const [tasks, setTasks] = useState([]);
@@ -184,7 +204,7 @@ export default function SimulatorSearch20() {
              </div>
           )}
           <button style={styles.btnBlue}>Rating Guidelines</button>
-          <button onClick={() => navigate('/dashboard')} style={styles.btnLight}>Exit Survey</button>
+          <button onClick={() => navigate('/dashboard')} style={styles.btnLight}>Release Survey</button>
           <button onClick={submitRating} style={styles.btnGreen}>
             {isSubmitted ? "Load Next Task" : "Submit Rating"}
           </button>
@@ -251,6 +271,27 @@ export default function SimulatorSearch20() {
             const raterAns = answers[res.resultId];
             const gold = res.goldStandard;
             const headerColor = pinColors[index] || '#8b5cf6';
+            
+            // Calculate precise distances using the Haversine formula
+           // 1. Calculate Distance to User normally
+            const distToUser = calculateDistance(taskData.userLocation.lat, taskData.userLocation.lng, res.lat, res.lng);
+            
+            // 2. Define Viewport Boundaries
+            const vLat = taskData.viewportCenter.lat;
+            const vLng = taskData.viewportCenter.lng;
+            const vOffset = taskData.viewportSizeOffset;
+            
+            const isInsideViewport = (
+              res.lat >= (vLat - vOffset) &&
+              res.lat <= (vLat + vOffset) &&
+              res.lng >= (vLng - vOffset) &&
+              res.lng <= (vLng + vOffset)
+            );
+
+            // 3. Set to 0 if inside, otherwise calculate distance
+            const distToViewport = isInsideViewport 
+              ? "0.000" 
+              : calculateDistance(vLat, vLng, res.lat, res.lng);
 
             return (
               <div key={res.resultId} style={styles.resultCard}>
@@ -265,7 +306,13 @@ export default function SimulatorSearch20() {
                   <tbody>
                     <tr><td style={styles.tdLabel}>Address</td><td style={styles.tdValue}>{res.address}</td></tr>
                     <tr><td style={styles.tdLabel}>Classification</td><td style={styles.tdValue}>{res.classification}</td></tr>
+
                     <tr><td style={styles.tdLabel}>Type</td><td style={styles.tdValue}>{res.type}</td></tr>
+
+                    {/* Distance to User & Viewport calculations */}
+                    <tr><td style={styles.tdLabel}>Distance to User</td><td style={styles.tdValue}>{distToUser} km</td></tr>
+                    <tr><td style={styles.tdLabel}>Distance to Viewport</td><td style={styles.tdValue}>{distToViewport} km</td></tr>
+                    
                     <tr><td style={styles.tdLabel}>Lat, Lng</td><td style={styles.tdValue}>{res.lat}, {res.lng}</td></tr>
                   </tbody>
                 </table>
