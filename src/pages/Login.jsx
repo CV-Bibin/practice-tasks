@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth'; // <-- Add onAuthStateChanged
-import { auth } from '../config/firebase';
+import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth'; // <-- Added signOut
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'; 
+import { auth, db } from '../config/firebase'; 
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -11,27 +12,92 @@ export default function Login() {
   
   const navigate = useNavigate();
 
-  // ADD THIS BLOCK: Listens for saved sessions and auto-redirects
+  // Listens for saved sessions and auto-redirects intelligently
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        navigate('/dashboard');
+        try {
+          const userSnap = await getDoc(doc(db, 'users', user.uid));
+          
+          if (userSnap.exists()) {
+            const data = userSnap.data();
+            
+            // --- SECURITY CHECK: Block suspended users on auto-login ---
+            if (data.status === 'suspended') {
+              await signOut(auth); // Destroy session
+              localStorage.removeItem('userRole'); // Clear badge
+              setError("Your account has been suspended. Please contact the administrator.");
+              return; // Stop them from navigating
+            }
+            
+            const role = data.role || 'rater';
+            localStorage.setItem('userRole', role); 
+            navigate(role === 'admin' ? '/admin' : '/dashboard');
+          } else {
+            // Fallback for brand new users caught in the transition
+            localStorage.setItem('userRole', 'rater');
+            navigate('/dashboard');
+          }
+        } catch (error) {
+          console.error("Error fetching session role:", error);
+          navigate('/dashboard'); // Safe fallback
+        }
       }
     });
     return () => unsubscribe(); // Cleanup listener on unmount
   }, [navigate]);
 
+  // Handles the active login attempt
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
     try {
-      // Attempt to sign in with Firebase
-      await signInWithEmailAndPassword(auth, email, password);
-      
-      // If successful, route them to the dashboard
-      navigate('/dashboard');
+      // 1. Attempt to sign in with Firebase Auth
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // 2. Look up this user in the Firestore 'users' collection
+      const userRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
+
+      let userRole = 'rater'; // Default fallback
+      let userStatus = 'active'; // Default to active
+
+      if (userSnap.exists()) {
+        // If they exist, grab their actual role and status
+        const data = userSnap.data();
+        userRole = data.role || 'rater';
+        userStatus = data.status || 'active';
+      } else {
+        // --- AUTO-REGISTER FEATURE ---
+        await setDoc(userRef, {
+          email: user.email,
+          role: 'rater', // Always default new people to 'rater' for security
+          status: 'active', // Initialize new users as active
+          createdAt: serverTimestamp()
+        });
+      }
+
+      // --- SECURITY CHECK: Block suspended users on active login ---
+      if (userStatus === 'suspended') {
+        await signOut(auth); // Force logout immediately
+        setError("Your account has been suspended. Please contact the administrator.");
+        setIsLoading(false);
+        return; // Stop the login process dead in its tracks!
+      }
+
+      // 3. Save the role to localStorage so ProtectedRoute can see it
+      localStorage.setItem('userRole', userRole);
+
+      // 4. The Smart Redirect
+      if (userRole === 'admin') {
+        navigate('/admin'); // Send admins to the Command Center
+      } else {
+        navigate('/dashboard'); // Send raters to their task list
+      }
+
     } catch (err) {
       console.error(err);
       setError('Invalid email or password. Please try again.');

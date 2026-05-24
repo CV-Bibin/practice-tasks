@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   collection,
   getDocs,
@@ -7,6 +7,9 @@ import {
   where,
   addDoc,
   serverTimestamp,
+  doc, // Added
+  setDoc, // Added
+  increment // Added
 } from "firebase/firestore";
 import { db, auth } from "../config/firebase"; // Ensure 'auth' is imported!
 import TaskMapPreview from "../components/shared/TaskMapPreview";
@@ -62,6 +65,8 @@ const addrLabels = {
 
 export default function SimulatorSearch20() {
   const navigate = useNavigate();
+  const location = useLocation(); // Add this
+  const targetSet = location.state?.targetSet; // Add this
   const [tasks, setTasks] = useState([]);
   const [currentTaskIndex, setCurrentTaskIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -71,15 +76,22 @@ export default function SimulatorSearch20() {
   const [score, setScore] = useState({ correct: 0, total: 0 });
   const [showCompletionModal, setShowCompletionModal] = useState(false);
 
-  useEffect(() => {
+useEffect(() => {
+    // Kick them out if they didn't click a real exam
+    if (!targetSet) {
+      alert("No exam set selected. Please launch from your dashboard.");
+      navigate('/dashboard');
+      return;
+    }
     fetchTasks();
-  }, []);
+  }, [targetSet, navigate]);
 
   const fetchTasks = async () => {
     try {
       const q = query(
         collection(db, "tasks"),
         where("taskType", "==", "search_2_0"),
+        where("group", "==", targetSet)
       );
       const querySnapshot = await getDocs(q);
       const fetchedTasks = querySnapshot.docs.map((doc) => ({
@@ -240,6 +252,7 @@ export default function SimulatorSearch20() {
           userId: auth.currentUser.uid,
           raterEmail: auth.currentUser.email,
           taskId: currentTask.id,
+          taskGroup: targetSet,
           taskType: 'search_2_0',
           submittedAt: serverTimestamp(),
           
@@ -269,13 +282,27 @@ export default function SimulatorSearch20() {
     }
   };
 
-  const nextTask = () => {
+ const nextTask = async () => { // <-- Make sure to add async here
     if (currentTaskIndex < tasks.length - 1) {
       const nextIndex = currentTaskIndex + 1;
       setCurrentTaskIndex(nextIndex);
       initializeAnswers(tasks[nextIndex]);
     } else {
-      // Show our custom box instead of the alert
+      // --- ADD THIS WHOLE BLOCK ---
+      // The exam is over, log the attempt!
+      if (auth.currentUser) {
+        try {
+          const attemptRef = doc(db, 'users', auth.currentUser.uid, 'attempts', targetSet);
+          await setDoc(attemptRef, {
+            count: increment(1), // Adds 1 to whatever the current number is
+            lastAttemptAt: serverTimestamp()
+          }, { merge: true });
+        } catch (err) {
+          console.error("Failed to log exam attempt:", err);
+        }
+      }
+      // ----------------------------
+      
       setShowCompletionModal(true);
     }
   };
