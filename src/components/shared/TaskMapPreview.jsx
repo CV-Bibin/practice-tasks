@@ -179,15 +179,11 @@ export default function TaskMapPreview({ userCoords, viewportCoords, viewportSiz
           {viewportPopupPos && (
             <Popup 
               position={viewportPopupPos} 
-              autoClose={false} 
-              closeOnClick={false} 
               onClose={() => setViewportPopupPos(null)}
             >
               <div style={{ textAlign: 'center' }}>
                 <strong style={{ display: 'block', marginBottom: '4px', color: '#3b82f6' }}>Viewport Center</strong>
-                Lat: {viewportPopupPos[0].toFixed(4)}
-                <br />
-                Lng: {viewportPopupPos[1].toFixed(4)}
+                {viewportPopupPos[0]}, {viewportPopupPos[1]}
               </div>
             </Popup>
           )}
@@ -200,9 +196,7 @@ export default function TaskMapPreview({ userCoords, viewportCoords, viewportSiz
           <Popup>
             <div style={{ textAlign: 'center' }}>
               <strong style={{ display: 'block', marginBottom: '4px' }}>User Location</strong>
-              Lat: {parseFloat(uLat).toFixed(4)}
-              <br />
-              Lng: {parseFloat(uLng).toFixed(4)}
+              {parseFloat(uLat)}, {parseFloat(uLng)}
             </div>
           </Popup>
         </Marker>
