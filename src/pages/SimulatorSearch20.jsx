@@ -7,13 +7,26 @@ import {
   where,
   addDoc,
   serverTimestamp,
-  doc, // Added
-  setDoc, // Added
-  increment // Added
+  doc, 
+  setDoc, 
+  increment, 
+  getDoc,    
+  updateDoc, 
+  deleteDoc  
 } from "firebase/firestore";
 import { db, auth } from "../config/firebase"; // Ensure 'auth' is imported!
 import TaskMapPreview from "../components/shared/TaskMapPreview";
 import { pinColors } from "../components/shared/TaskMapPreview";
+
+// --- FISHER-YATES SHUFFLE ---
+const shuffleArray = (array) => {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+};
 
 // --- MATH HELPER: Calculates distance between two coordinates in kilometers ---
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -65,52 +78,90 @@ const addrLabels = {
 
 export default function SimulatorSearch20() {
   const navigate = useNavigate();
-  const location = useLocation(); // Add this
-  const targetSet = location.state?.targetSet; // Add this
+  const location = useLocation();
+  
+  // NEW: Catch routing state
+  const targetSet = location.state?.targetSet;
+  const reviewMode = location.state?.reviewMode;
+  
   const [tasks, setTasks] = useState([]);
   const [currentTaskIndex, setCurrentTaskIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  // NEW: Store past submissions for review mode
+  const [reviewData, setReviewData] = useState({});
 
   const [answers, setAnswers] = useState({});
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [score, setScore] = useState({ correct: 0, total: 0 });
   const [showCompletionModal, setShowCompletionModal] = useState(false);
 
-useEffect(() => {
+  useEffect(() => {
     // Kick them out if they didn't click a real exam
     if (!targetSet) {
       alert("No exam set selected. Please launch from your dashboard.");
       navigate('/dashboard');
       return;
     }
-    fetchTasks();
+    fetchTasksAndReviewData();
   }, [targetSet, navigate]);
 
-  const fetchTasks = async () => {
+const fetchTasksAndReviewData = async () => {
     try {
-      const q = query(
-        collection(db, "tasks"),
-        where("taskType", "==", "search_2_0"),
-        where("group", "==", targetSet)
-      );
+      const q = query(collection(db, "tasks"), where("taskType", "==", "search_2_0"), where("group", "==", targetSet));
       const querySnapshot = await getDocs(q);
-      const fetchedTasks = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      let fetchedTasks = querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 
-      setTasks(fetchedTasks);
-      if (fetchedTasks.length > 0) {
-        initializeAnswers(fetchedTasks[0]);
+      if (reviewMode && auth.currentUser) {
+        // ... (Keep your existing Review Mode logic here)
+        setTasks(fetchedTasks);
+        if (fetchedTasks.length > 0) initializeAnswers(fetchedTasks[0]);
+      } else if (auth.currentUser) {
+        // --- THE ANTI-CHEAT SESSION LOGIC ---
+        const sessionRef = doc(db, 'users', auth.currentUser.uid, 'active_sessions', targetSet);
+        const sessionSnap = await getDoc(sessionRef);
+
+        if (sessionSnap.exists()) {
+          // RESUME SESSION
+          const sessionData = sessionSnap.data();
+          // Restore the exact shuffle order
+          fetchedTasks.sort((a, b) => {
+            const iA = sessionData.shuffledIds.indexOf(a.id);
+            const iB = sessionData.shuffledIds.indexOf(b.id);
+            return (iA > -1 ? iA : 999) - (iB > -1 ? iB : 999);
+          });
+          setTasks(fetchedTasks);
+          setCurrentTaskIndex(sessionData.currentIndex);
+          initializeAnswers(fetchedTasks[sessionData.currentIndex]);
+        } else {
+          // CREATE NEW SESSION
+         fetchedTasks = shuffleArray(fetchedTasks);
+          await setDoc(sessionRef, {
+            shuffledIds: fetchedTasks.map(t => t.id),
+            currentIndex: 0,
+            startedAt: serverTimestamp()
+          });
+          setTasks(fetchedTasks);
+          setCurrentTaskIndex(0);
+          if (fetchedTasks.length > 0) initializeAnswers(fetchedTasks[0]);
+        }
       }
     } catch (error) {
-      console.error("Error fetching tasks:", error);
+      console.error("Error:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const initializeAnswers = (task) => {
+  const initializeAnswers = (task, pastData = reviewData) => {
+    // NEW: If reviewing, inject their past answers and lock the form!
+    if (reviewMode && pastData[task.id]) {
+      setAnswers(pastData[task.id]);
+      setIsSubmitted(true);
+      return;
+    }
+
     const initialAnswers = { isNavigational: "" };
     task.taskData.results.forEach((res) => {
       initialAnswers[res.resultId] = {
@@ -146,7 +197,7 @@ useEffect(() => {
   };
 
   const handleAnswerChange = (resultId, field, value) => {
-    if (isSubmitted && field !== "comment") return;
+    if (isSubmitted) return;
     setAnswers((prev) => ({
       ...prev,
       [resultId]: { ...prev[resultId], [field]: value },
@@ -158,11 +209,15 @@ useEffect(() => {
     setAnswers((prev) => ({ ...prev, [field]: value }));
   };
 
- const submitRating = async () => {
+  const submitRating = async () => {
     if (isSubmitted) {
       nextTask();
       return;
     }
+    
+    // Add this right after the if statement:
+    if (submitting) return;
+    setSubmitting(true);
 
     // --- 1. Initialize Deep Tracking Categories ---
     let catScores = {
@@ -182,8 +237,8 @@ useEffect(() => {
 
     // --- 3. Grade Results Granularly ---
     currentTask.taskData.results.forEach(res => {
-      const raterAns = answers[res.resultId];
-      const gold = res.goldStandard;
+      const raterAns = answers[res.resultId] || {};
+      const gold = res.goldStandard || {};
 
       // Status & Language
       catScores.poiClosed.t += 2;
@@ -252,7 +307,7 @@ useEffect(() => {
           userId: auth.currentUser.uid,
           raterEmail: auth.currentUser.email,
           taskId: currentTask.id,
-          taskGroup: targetSet,
+          taskGroup: targetSet, // NEW: Associates this submission with the exact exam set
           taskType: 'search_2_0',
           submittedAt: serverTimestamp(),
           
@@ -276,37 +331,50 @@ useEffect(() => {
           // The Ultimate Audit Trail: Exact Rater Inputs
           rawRaterAnswers: answers
         });
-      } catch (err) {
+     
+       // --- INSTANT ANTI-CHEAT LOCK ---
+        // Advance the database index immediately so a refresh skips this question
+        if (!reviewMode) {
+          const nextIndex = currentTaskIndex + 1;
+          await updateDoc(doc(db, 'users', auth.currentUser.uid, 'active_sessions', targetSet), {
+            currentIndex: nextIndex
+          });
+        } 
+
+     } catch (err) {
         console.error("Failed to save submission analytics:", err);
+      } finally {
+        setSubmitting(false); // <--- ADD THIS
       }
     }
   };
 
- const nextTask = async () => { // <-- Make sure to add async here
-    if (currentTaskIndex < tasks.length - 1) {
-      const nextIndex = currentTaskIndex + 1;
+ const nextTask = async () => { 
+    const nextIndex = currentTaskIndex + 1;
+
+    // The database was already updated during submitRating. 
+    // Just move the local UI forward.
+    if (nextIndex < tasks.length) {
       setCurrentTaskIndex(nextIndex);
       initializeAnswers(tasks[nextIndex]);
     } else {
-      // --- ADD THIS WHOLE BLOCK ---
-      // The exam is over, log the attempt!
-      if (auth.currentUser) {
+      // EXAM COMPLETION PROTOCOL
+      if (!reviewMode && auth.currentUser) {
         try {
-          const attemptRef = doc(db, 'users', auth.currentUser.uid, 'attempts', targetSet);
-          await setDoc(attemptRef, {
-            count: increment(1), // Adds 1 to whatever the current number is
-            lastAttemptAt: serverTimestamp()
+          // 1. Log the attempt count
+          await setDoc(doc(db, 'users', auth.currentUser.uid, 'attempts', targetSet), { 
+             count: increment(1), lastAttemptAt: serverTimestamp() 
           }, { merge: true });
+          
+          // 2. Delete the session
+          await deleteDoc(doc(db, 'users', auth.currentUser.uid, 'active_sessions', targetSet));
         } catch (err) {
-          console.error("Failed to log exam attempt:", err);
+          console.error("Failed to finish exam:", err);
         }
       }
-      // ----------------------------
-      
       setShowCompletionModal(true);
     }
   };
-
   const getFeedbackStyle = (resultId, field, goldValue) => {
     if (!isSubmitted) return styles.select;
     const raterValue = resultId ? answers[resultId][field] : answers[field];
@@ -348,7 +416,7 @@ useEffect(() => {
   let totalEstSeconds = 0;
   if (Object.keys(answers).length > 0) {
     taskData.results.forEach((res) => {
-      const raterAns = answers[res.resultId];
+      const raterAns = answers[res.resultId] || {};
       // If POI is closed, add 105 seconds (1m 45s). Otherwise, add 190 seconds (3m 10s).
       if (raterAns && raterAns.poiClosed) {
         totalEstSeconds += 105;
@@ -364,11 +432,11 @@ useEffect(() => {
   return (
     <div style={styles.container}>
 
-      {/* --- NEW: Custom Completion Box --- */}
+      {/* --- Custom Completion Box --- */}
       {showCompletionModal && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalBox}>
-            <p style={styles.modalText}>no more tasks available</p>
+            <p style={styles.modalText}>{reviewMode ? "You have finished reviewing this module." : "no more tasks available"}</p>
             <button style={styles.modalButton} onClick={() => navigate('/dashboard')}>
               Return to Dashboard
             </button>
@@ -376,9 +444,7 @@ useEffect(() => {
         </div>
       )}
 
-
-      
-      {/* TOP HEADER */}
+       {/* TOP HEADER */}
       <header style={styles.topBar}>
         <div style={styles.topBarLeft}>
           <div style={styles.headerBlock}>
@@ -398,6 +464,9 @@ useEffect(() => {
         </div>
 
         <div style={styles.topBarRight}>
+          {/* NEW: Show badge if in review mode */}
+          {reviewMode && <span style={{backgroundColor: '#fef08a', color: '#854d0e', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', marginRight: '8px'}}>REVIEW MODE</span>}
+          
           <button style={styles.btnBlue}>Rating Guidelines</button>
           <button
             onClick={() => navigate("/dashboard")}
@@ -405,9 +474,18 @@ useEffect(() => {
           >
             Release Survey
           </button>
-          <button onClick={submitRating} style={styles.btnGreen}>
-            {isSubmitted ? "Load Next Task" : "Submit Rating"}
-          </button>
+
+          {/* NEW: Toggle button logic based on Review Mode */}
+          {!reviewMode ? (
+            <button onClick={submitRating} style={styles.btnGreen}>
+              {isSubmitted ? (currentTaskIndex === tasks.length - 1 ? "Finish Module" : "Load Next Task") : "Submit Rating"}
+            </button>
+          ) : (
+            <button onClick={nextTask} style={styles.btnGreen}>
+               {currentTaskIndex === tasks.length - 1 ? "Finish Review" : "Next Question"}
+            </button>
+          )}
+
         </div>
       </header>
 
@@ -513,8 +591,8 @@ useEffect(() => {
 
           {/* Result Cards */}
           {taskData.results.map((res, index) => {
-            const raterAns = answers[res.resultId];
-            const gold = res.goldStandard;
+            const raterAns = answers[res.resultId] || {};
+            const gold = res.goldStandard || {};
             const headerColor = pinColors[index] || "#8b5cf6";
 
             // Calculate precise distances using the Haversine formula
@@ -650,7 +728,7 @@ useEffect(() => {
                       <option value="Bad">Bad</option>
                     </select>
 
-                    {/* NEW: Relevance Granular Feedback */}
+                    {/* Relevance Granular Feedback */}
                     {isSubmitted && (
                       <>
                         {raterAns.relevance !== gold.relevance && (
@@ -749,7 +827,7 @@ useEffect(() => {
                       <option value="Can't Verify">Can't Verify</option>
                     </select>
 
-                    {/* NEW: Name Accuracy Granular Feedback */}
+                    {/* Name Accuracy Granular Feedback */}
                     {isSubmitted && !raterAns.poiClosed && (
                       <>
                         {raterAns.nameAcc !== gold.nameAccuracy && (
@@ -845,7 +923,7 @@ useEffect(() => {
                       <option value="Can't Verify">Can't Verify</option>
                     </select>
 
-                    {/* NEW: Address Accuracy Granular Feedback */}
+                    {/* Address Accuracy Granular Feedback */}
                     {isSubmitted && !raterAns.poiClosed && (
                       <>
                         {raterAns.addressAcc !== gold.addressAccuracy && (
@@ -1119,6 +1197,7 @@ const styles = {
     color: "#4b5563",
     marginBottom: "4px",
     display: "block",
+    fontWeight: "bold",
   },
   select: {
     width: "100%",

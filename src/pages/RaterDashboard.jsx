@@ -8,10 +8,11 @@ export default function RaterDashboard() {
   const [metrics, setMetrics] = useState(null);
   const [liveSets, setLiveSets] = useState([]);
   const [userAttempts, setUserAttempts] = useState({});
+  const [activeSessions, setActiveSessions] = useState({}); // NEW: Tracks mid-exam state
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   
-  // NEW: Tab State for modern navigation
+  // Tab State for modern navigation
   const [activeTab, setActiveTab] = useState('search20');
   
   const navigate = useNavigate();
@@ -46,6 +47,14 @@ export default function RaterDashboard() {
           attemptsData[d.id] = d.data().count || 0;
         });
         setUserAttempts(attemptsData);
+
+        // 4. NEW: Fetch incomplete active sessions
+        const activeSnap = await getDocs(collection(db, 'users', user.uid, 'active_sessions'));
+        const sessionData = {};
+        activeSnap.forEach(d => { 
+          sessionData[d.id] = true; 
+        });
+        setActiveSessions(sessionData);
 
       } catch (error) {
         console.error("Error fetching dashboard data:", error);
@@ -184,20 +193,29 @@ export default function RaterDashboard() {
                 {liveSets.map(set => {
                   const pastAttempts = userAttempts[set.id] || 0;
                   const isUnlimited = set.attemptLimit === 999;
-                  const isLocked = !isUnlimited && pastAttempts >= set.attemptLimit;
+                  
+                  // NEW LOGIC: Check if user has an unfinished session
+                  const isResuming = activeSessions[set.id] || false; 
+                  
+                  // Physically locked if NOT unlimited AND they hit the limit, AND they aren't currently resuming
+                  const isLocked = !isUnlimited && pastAttempts >= set.attemptLimit && !isResuming;
+                  
+                  // Only allow review if they are COMPLETELY locked out of taking the test
+                  // AND the admin has pressed the "Reveal Answers" button.
+                  const canReview = isLocked && set.answersRevealed;
 
                   return (
-                    <div key={set.id} className={`exam-card ${isLocked ? 'locked' : 'active'}`}>
+                    <div key={set.id} className={`exam-card ${isLocked && !canReview ? 'locked' : 'active'}`}>
                       {/* Status Badge */}
-                      <div style={{ position: 'absolute', top: '24px', right: '24px', padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '700', backgroundColor: isLocked ? '#f1f5f9' : '#ecfdf5', color: isLocked ? '#64748b' : '#059669', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        {isLocked ? '🔒 Locked' : '🟢 Available'}
+                      <div style={{ position: 'absolute', top: '24px', right: '24px', padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '700', backgroundColor: (isLocked && !canReview) ? '#f1f5f9' : isResuming ? '#fef3c7' : '#ecfdf5', color: (isLocked && !canReview) ? '#64748b' : isResuming ? '#a16207' : '#059669', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {(isLocked && !canReview) ? '🔒 Locked' : isResuming ? '⏳ In Progress' : '🟢 Available'}
                       </div>
                       
                       <div style={{ fontSize: '13px', fontWeight: '700', color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                         Search 2.0 Module
                       </div>
                       
-                      <h3 style={{ margin: '0 0 16px 0', fontSize: '22px', fontWeight: '800', color: isLocked ? '#64748b' : '#0f172a' }}>
+                      <h3 style={{ margin: '0 0 16px 0', fontSize: '22px', fontWeight: '800', color: (isLocked && !canReview) ? '#64748b' : '#0f172a' }}>
                         {set.id}
                       </h3>
                       
@@ -209,22 +227,42 @@ export default function RaterDashboard() {
                         </div>
                         {!isUnlimited && (
                           <div style={{ height: '6px', backgroundColor: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
-                            <div style={{ height: '100%', backgroundColor: isLocked ? '#ef4444' : '#4f46e5', width: `${(pastAttempts / set.attemptLimit) * 100}%`, transition: 'width 0.3s ease' }}></div>
+                            <div style={{ height: '100%', backgroundColor: (isLocked && !canReview) ? '#ef4444' : '#4f46e5', width: `${(pastAttempts / set.attemptLimit) * 100}%`, transition: 'width 0.3s ease' }}></div>
                           </div>
                         )}
                         <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '8px' }}>
-                          {isUnlimited ? "Unlimited practice mode enabled." : isLocked ? "Maximum attempts reached. Please contact admin." : "You have attempts remaining."}
+                          {isUnlimited ? "Unlimited practice mode enabled." : 
+                           canReview ? "Answers are now available for review." :
+                           isResuming ? "You have an unfinished attempt." :
+                           isLocked ? "Maximum attempts reached. Awaiting review." : "You have attempts remaining."}
                         </div>
                       </div>
 
-                      <button 
-                        disabled={isLocked} 
-                        onClick={() => launchExam(set.id)}
-                        className="btn-primary"
-                        style={{ marginTop: 'auto', width: '100%' }}
-                      >
-                        {isLocked ? "Exam Locked" : pastAttempts > 0 ? "Retake Module" : "Start Module"}
-                      </button>
+                      {/* SMART BUTTON LOGIC */}
+                      {canReview ? (
+                        <button 
+                          onClick={() => navigate(`/simulate/search20`, { state: { targetSet: set.id, reviewMode: true } })}
+                          className="btn-primary"
+                          style={{ marginTop: 'auto', width: '100%', backgroundColor: '#0ea5e9' }}
+                        >
+                          📊 Review Results
+                        </button>
+                      ) : (
+                        <button 
+                          disabled={isLocked} 
+                          onClick={() => launchExam(set.id)}
+                          className="btn-primary"
+                          style={{ 
+                            marginTop: 'auto', 
+                            width: '100%',
+                            backgroundColor: isLocked ? '#cbd5e1' : isResuming ? '#f59e0b' : '#4f46e5', // Amber if resuming
+                            color: isLocked ? '#64748b' : 'white',
+                            cursor: isLocked ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          {isLocked ? "Awaiting Results" : isResuming ? "Continue Exam" : pastAttempts > 0 ? "Retake Module" : "Start Module"}
+                        </button>
+                      )}
                     </div>
                   );
                 })}

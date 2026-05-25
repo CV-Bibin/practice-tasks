@@ -1,5 +1,4 @@
-// src/components/shared/TaskMapPreview.jsx
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { MapContainer, TileLayer, Marker, Rectangle, Popup, useMap, LayersControl } from 'react-leaflet';
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
@@ -74,7 +73,6 @@ function CenterMapButton({ userCoords, viewportCoords, viewportSize, results }) 
     }
   };
 
-  // Add this right below handleCenterAll
   const handleFocusViewport = () => {
     const vLat = getLat(viewportCoords);
     const vLng = getLng(viewportCoords);
@@ -85,12 +83,10 @@ function CenterMapButton({ userCoords, viewportCoords, viewportSize, results }) 
         [parseFloat(vLat) - offset, parseFloat(vLng) - offset],
         [parseFloat(vLat) + offset, parseFloat(vLng) + offset]
       ]);
-      // Fits the blue box perfectly into the frame with a small padding
       map.fitBounds(bounds, { padding: [30, 30] });
     }
   };
 
-  // Helper style so we don't repeat CSS twice
   const btnStyle = {
     backgroundColor: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '4px',
     width: '34px', height: '34px', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -101,28 +97,14 @@ function CenterMapButton({ userCoords, viewportCoords, viewportSize, results }) 
     <div style={{ position: 'absolute', top: '84px', left: '10px', zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '4px' }}>
       
       {/* Button 1: Center All Pins */}
-      <button
-        type="button"
-        onClick={handleCenterAll}
-        title="Center Map to show all Pins"
-        style={btnStyle}
-        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
-        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ffffff'}
-      >
+      <button type="button" onClick={handleCenterAll} title="Center Map to show all Pins" style={btnStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ffffff'}>
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="#334155" style={{ width: '18px', height: '18px' }}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75v4.5m0-4.5h-4.5m4.5 0L15 9M20.25 20.25v-4.5m0 4.5h-4.5m4.5 0L15 15" />
         </svg>
       </button>
 
       {/* Button 2: Focus Viewport Box */}
-      <button
-        type="button"
-        onClick={handleFocusViewport}
-        title="Zoom into Viewport Bounds"
-        style={btnStyle}
-        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
-        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ffffff'}
-      >
+      <button type="button" onClick={handleFocusViewport} title="Zoom into Viewport Bounds" style={btnStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ffffff'}>
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="#3b82f6" style={{ width: '18px', height: '18px' }}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 3.75H6A2.25 2.25 0 003.75 6v1.5M16.5 3.75H18A2.25 2.25 0 0120.25 6v1.5M3.75 16.5v1.5A2.25 2.25 0 006 20.25h1.5M16.5 20.25H18A2.25 2.25 0 0020.25 18v-1.5M12 12h.008v.008H12V12z" />
         </svg>
@@ -133,6 +115,9 @@ function CenterMapButton({ userCoords, viewportCoords, viewportSize, results }) 
 }
 
 export default function TaskMapPreview({ userCoords, viewportCoords, viewportSize, results }) {
+  // NEW: State for standalone Viewport Popup
+  const [viewportPopupPos, setViewportPopupPos] = useState(null);
+
   const vLat = getLat(viewportCoords);
   const vLng = getLng(viewportCoords);
   const uLat = getLat(userCoords);
@@ -162,30 +147,78 @@ export default function TaskMapPreview({ userCoords, viewportCoords, viewportSiz
         <LayersControl.BaseLayer name="Satellite View">
           <TileLayer 
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" 
-            attribution="Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community"
+            attribution="Tiles &copy; Esri &mdash; Source: Esri"
           />
         </LayersControl.BaseLayer>
       </LayersControl>
 
       <MapRecenter lat={vLat} lng={vLng} />
-     <CenterMapButton 
+      <CenterMapButton 
         userCoords={userCoords} 
         viewportCoords={viewportCoords} 
         viewportSize={viewportSize} 
         results={results} 
       />
       
-      {bounds && <Rectangle bounds={bounds} pathOptions={{ color: '#3b82f6', weight: 2, fillColor: '#3b82f6', fillOpacity: 0.2 }} />}
-      {uLat && uLng && !isNaN(uLat) && (
-        <Marker position={[parseFloat(uLat), parseFloat(uLng)]} icon={UserIcon}><Popup>User Location</Popup></Marker>
+      {/* --- 1. VIEWPORT RECTANGLE WITH CLICK FIX --- */}
+      {bounds && (
+        <>
+          <Rectangle 
+            bounds={bounds} 
+            pathOptions={{ color: '#3b82f6', weight: 2, fillColor: '#3b82f6', fillOpacity: 0.2 }} 
+            eventHandlers={{
+              click: (e) => {
+                // Stop click from closing the popup instantly
+                L.DomEvent.stopPropagation(e.originalEvent); 
+                // Set popup exactly to the center
+                setViewportPopupPos([parseFloat(vLat), parseFloat(vLng)]);
+              }
+            }}
+          />
+          {/* Standalone Popup for the Viewport */}
+          {viewportPopupPos && (
+            <Popup 
+              position={viewportPopupPos} 
+              autoClose={false} 
+              closeOnClick={false} 
+              onClose={() => setViewportPopupPos(null)}
+            >
+              <div style={{ textAlign: 'center' }}>
+                <strong style={{ display: 'block', marginBottom: '4px', color: '#3b82f6' }}>Viewport Center</strong>
+                Lat: {viewportPopupPos[0].toFixed(4)}
+                <br />
+                Lng: {viewportPopupPos[1].toFixed(4)}
+              </div>
+            </Popup>
+          )}
+        </>
       )}
+
+      {/* --- 2. USER LOCATION PIN --- */}
+      {uLat && uLng && !isNaN(uLat) && (
+        <Marker position={[parseFloat(uLat), parseFloat(uLng)]} icon={UserIcon}>
+          <Popup>
+            <div style={{ textAlign: 'center' }}>
+              <strong style={{ display: 'block', marginBottom: '4px' }}>User Location</strong>
+              Lat: {parseFloat(uLat).toFixed(4)}
+              <br />
+              Lng: {parseFloat(uLng).toFixed(4)}
+            </div>
+          </Popup>
+        </Marker>
+      )}
+
+      {/* --- 3. RESULT PINS --- */}
       {results.map((res, index) => {
         const rLat = getLat(res.coords);
         const rLng = getLng(res.coords);
         if (!rLat || !rLng || isNaN(rLat)) return null;
         return (
           <Marker key={res.id} position={[parseFloat(rLat), parseFloat(rLng)]} icon={getNumberedPin(index + 1, index)}>
-            <Popup><strong>{index + 1}. {res.name || 'Unnamed Result'}</strong><br/>{res.address}</Popup>
+            <Popup>
+              <strong>{index + 1}. {res.name || 'Unnamed Result'}</strong><br/>
+              {res.address}
+            </Popup>
           </Marker>
         );
       })}
