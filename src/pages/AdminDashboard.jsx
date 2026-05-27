@@ -11,6 +11,7 @@ import CreateSearch20Task from '../components/admin/CreateSearch20Task';
 import UserManagement from './UserManagement'; 
 import QuestionManagement from './QuestionManagement'; 
 import SetManagement from './SetManagement';
+import RaterAnalytics from '../components/admin/RaterAnalytics';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -132,7 +133,7 @@ export default function AdminDashboard() {
           {activeTab === 'search20' && <CreateSearch20Task />}
           {activeTab === 'autocomplete' && <div><h2>Auto Complete Builder Coming Soon</h2></div>}
           {activeTab === 'poi' && <div><h2>POI Task Builder Coming Soon</h2></div>}
-          {activeTab === 'analytics' && <div><h2>Rater Analytics Matrix Coming Soon</h2></div>}
+          {activeTab === 'analytics' && <RaterAnalytics />}
           
           {/* NEW: Replaced placeholder with the actual component! */}
           {activeTab === 'questionmanagement' && <QuestionManagement />}

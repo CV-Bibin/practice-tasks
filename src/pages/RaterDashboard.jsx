@@ -144,7 +144,9 @@ export default function RaterDashboard() {
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderLeft: '1px solid #e2e8f0', paddingLeft: '20px' }}>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '13px', fontWeight: '600', color: '#0f172a' }}>{auth.currentUser?.email.split('@')[0]}</div>
+              <div style={{ fontSize: '13px', fontWeight: '600', color: '#0f172a' }}>
+                {auth.currentUser?.email?.split('@')[0] || "User"}
+                </div>
               <div style={{ fontSize: '11px', color: '#64748b' }}>Rater Account</div>
             </div>
             <button onClick={handleLogout} style={{ background: 'transparent', border: '1px solid #cbd5e1', color: '#475569', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
@@ -192,17 +194,12 @@ export default function RaterDashboard() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '24px' }}>
                 {liveSets.map(set => {
                   const pastAttempts = userAttempts[set.id] || 0;
-                  const isUnlimited = set.attemptLimit === 999;
-                  
-                  // NEW LOGIC: Check if user has an unfinished session
-                  const isResuming = activeSessions[set.id] || false; 
-                  
-                  // Physically locked if NOT unlimited AND they hit the limit, AND they aren't currently resuming
-                  const isLocked = !isUnlimited && pastAttempts >= set.attemptLimit && !isResuming;
-                  
-                  // Only allow review if they are COMPLETELY locked out of taking the test
-                  // AND the admin has pressed the "Reveal Answers" button.
-                  const canReview = isLocked && set.answersRevealed;
+const isUnlimited = set.attemptLimit === 999;
+
+const hasReachedLimit = !isUnlimited && pastAttempts >= set.attemptLimit;
+const isResuming = !!activeSessions[set.id] && !hasReachedLimit;
+const isLocked = hasReachedLimit;
+const canReview = hasReachedLimit && set.answersRevealed;
 
                   return (
                     <div key={set.id} className={`exam-card ${isLocked && !canReview ? 'locked' : 'active'}`}>

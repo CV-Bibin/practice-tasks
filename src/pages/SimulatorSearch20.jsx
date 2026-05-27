@@ -15,6 +15,7 @@ import {
   deleteDoc  
 } from "firebase/firestore";
 import { db, auth } from "../config/firebase"; // Ensure 'auth' is imported!
+import { onAuthStateChanged } from "firebase/auth";
 import TaskMapPreview from "../components/shared/TaskMapPreview";
 import { pinColors } from "../components/shared/TaskMapPreview";
 
@@ -83,6 +84,7 @@ export default function SimulatorSearch20() {
   // NEW: Catch routing state
   const targetSet = location.state?.targetSet;
   const reviewMode = location.state?.reviewMode;
+  const [moduleCompleted, setModuleCompleted] = useState(false);
   
   const [tasks, setTasks] = useState([]);
   const [currentTaskIndex, setCurrentTaskIndex] = useState(0);
@@ -90,7 +92,7 @@ export default function SimulatorSearch20() {
   const [submitting, setSubmitting] = useState(false);
 
   // NEW: Store past submissions for review mode
-  const [reviewData, setReviewData] = useState({});
+  const [reviewData, setReviewData] = useState(location.state?.reviewData || {});
 
   const [answers, setAnswers] = useState({});
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -98,34 +100,66 @@ export default function SimulatorSearch20() {
   const [showCompletionModal, setShowCompletionModal] = useState(false);
 
   useEffect(() => {
-    // Kick them out if they didn't click a real exam
-    if (!targetSet) {
-      alert("No exam set selected. Please launch from your dashboard.");
-      navigate('/dashboard');
-      return;
-    }
-    fetchTasksAndReviewData();
-  }, [targetSet, navigate]);
+  // Kick them out if they didn't click a real exam
+  if (!targetSet) {
+    alert("No exam set selected. Please launch from your dashboard.");
+    navigate("/dashboard");
+    return;
+  }
 
-const fetchTasksAndReviewData = async () => {
+  // Wait for Firebase Auth
+  const unsubscribe = onAuthStateChanged(auth, (user) => {
+    if (user) {
+      fetchTasksAndReviewData(user.uid);
+    }
+  });
+
+  return () => unsubscribe();
+}, [targetSet, navigate]);
+
+const fetchTasksAndReviewData = async (confirmedUid) => {
     try {
+      setLoading(true);
       const q = query(collection(db, "tasks"), where("taskType", "==", "search_2_0"), where("group", "==", targetSet));
       const querySnapshot = await getDocs(q);
       let fetchedTasks = querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 
-      if (reviewMode && auth.currentUser) {
-        // ... (Keep your existing Review Mode logic here)
+      // FIX 2: Smart UID Resolution (Handles both Admin reviews and Personal Rater reviews)
+      const activeUid = location.state?.reviewUid || confirmedUid;
+
+      if (reviewMode && activeUid) {
+        // ACTUALLY FETCH THE RATER'S PAST ANSWERS
+        const subQ = query(
+          collection(db, "rater_submissions"),
+          where("userId", "==", activeUid),
+          where("taskGroup", "==", targetSet)
+        );
+        const subSnap = await getDocs(subQ);
+        
+        let compiledReviewData = {};
+        subSnap.forEach(doc => {
+          const data = doc.data();
+          if (data.taskId && data.rawRaterAnswers) {
+            compiledReviewData[data.taskId] = data.rawRaterAnswers;
+          }
+        });
+
+        setReviewData(compiledReviewData);
         setTasks(fetchedTasks);
-        if (fetchedTasks.length > 0) initializeAnswers(fetchedTasks[0]);
-      } else if (auth.currentUser) {
-        // --- THE ANTI-CHEAT SESSION LOGIC ---
-        const sessionRef = doc(db, 'users', auth.currentUser.uid, 'active_sessions', targetSet);
+        
+        // Inject the answers immediately
+        if (fetchedTasks.length > 0) {
+          initializeAnswers(fetchedTasks[0], compiledReviewData);
+        }
+        
+      } else if (confirmedUid) {
+        // --- THE ANTI-CHEAT SESSION LOGIC FOR LIVE EXAMS ---
+        const sessionRef = doc(db, 'users', confirmedUid, 'active_sessions', targetSet);
         const sessionSnap = await getDoc(sessionRef);
 
         if (sessionSnap.exists()) {
           // RESUME SESSION
           const sessionData = sessionSnap.data();
-          // Restore the exact shuffle order
           fetchedTasks.sort((a, b) => {
             const iA = sessionData.shuffledIds.indexOf(a.id);
             const iB = sessionData.shuffledIds.indexOf(b.id);
@@ -136,7 +170,7 @@ const fetchTasksAndReviewData = async () => {
           initializeAnswers(fetchedTasks[sessionData.currentIndex]);
         } else {
           // CREATE NEW SESSION
-         fetchedTasks = shuffleArray(fetchedTasks);
+          fetchedTasks = shuffleArray(fetchedTasks);
           await setDoc(sessionRef, {
             shuffledIds: fetchedTasks.map(t => t.id),
             currentIndex: 0,
@@ -196,19 +230,99 @@ const fetchTasksAndReviewData = async () => {
     setIsSubmitted(false);
   };
 
-  const handleAnswerChange = (resultId, field, value) => {
-    if (isSubmitted) return;
-    setAnswers((prev) => ({
-      ...prev,
-      [resultId]: { ...prev[resultId], [field]: value },
-    }));
-  };
+const emptyAddrErrors = {
+  streetNum: false,
+  unit: false,
+  streetName: false,
+  subLoc: false,
+  loc: false,
+  region: false,
+  postal: false,
+  country: false,
+  notExist: false,
+  lang: false,
+  countrySpecific: false,
+  other: false,
+};
 
+const handleAnswerChange = (resultId, field, value) => {
+  if (isSubmitted) return;
+
+  setAnswers((prev) => {
+    const current = prev[resultId] || {};
+
+    if (field === "poiClosed" && value === true) {
+      return {
+        ...prev,
+        [resultId]: {
+          ...current,
+          poiClosed: true,
+          nameAcc: null,
+          nameIssue: null,
+          categoryIssue: null,
+          addressAcc: null,
+          addrErrors: emptyAddrErrors,
+          pinAcc: null,
+        },
+      };
+    }
+
+    if (field === "poiClosed" && value === false) {
+      return {
+        ...prev,
+        [resultId]: {
+          ...current,
+          poiClosed: false,
+          nameAcc: "",
+          nameIssue: false,
+          categoryIssue: false,
+          addressAcc: "",
+          addrErrors: emptyAddrErrors,
+          pinAcc: "",
+        },
+      };
+    }
+
+    return {
+      ...prev,
+      [resultId]: {
+        ...current,
+        [field]: value,
+      },
+    };
+  });
+};
   const handleGlobalChange = (field, value) => {
     if (isSubmitted) return;
     setAnswers((prev) => ({ ...prev, [field]: value }));
   };
 
+const completeModule = async () => {
+  if (moduleCompleted) return;
+
+  setModuleCompleted(true);
+
+  try {
+    if (!reviewMode && auth.currentUser) {
+      const uid = auth.currentUser.uid;
+
+      await setDoc(
+        doc(db, "users", uid, "attempts", targetSet),
+        {
+          count: increment(1),
+          completedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      await deleteDoc(doc(db, "users", uid, "active_sessions", targetSet));
+    }
+  } catch (err) {
+    console.error("Failed to complete module:", err);
+  } finally {
+    setShowCompletionModal(true);
+  }
+};
   const submitRating = async () => {
     if (isSubmitted) {
       nextTask();
@@ -298,83 +412,95 @@ const fetchTasksAndReviewData = async () => {
     setIsSubmitted(true);
 
     // --- 5. Save Deep Analytics Payload to Firebase ---
-    if (auth.currentUser) {
-      try {
-        // Calculate percentages safely
-        const calcPercent = (c, t) => t > 0 ? Math.round((c / t) * 100) : null;
+    
+     try {
+  if (!auth.currentUser) {
+    throw new Error("No authenticated user found");
+  }
 
-        await addDoc(collection(db, 'rater_submissions'), {
-          userId: auth.currentUser.uid,
-          raterEmail: auth.currentUser.email,
-          taskId: currentTask.id,
-          taskGroup: targetSet, // NEW: Associates this submission with the exact exam set
-          taskType: 'search_2_0',
-          submittedAt: serverTimestamp(),
-          
-          // Overall Score
-          overall: {
-            correct: correctCount,
-            total: totalQuestions,
-            accuracy: calcPercent(correctCount, totalQuestions)
-          },
+  const calcPercent = (c, t) => (t > 0 ? Math.round((c / t) * 100) : null);
 
-          // Granular Category Scores
-          categories: {
-            navigational: { correct: catScores.navigational.c, total: catScores.navigational.t, accuracy: calcPercent(catScores.navigational.c, catScores.navigational.t) },
-            poiClosed: { correct: catScores.poiClosed.c, total: catScores.poiClosed.t, accuracy: calcPercent(catScores.poiClosed.c, catScores.poiClosed.t) },
-            relevance: { correct: catScores.relevance.c, total: catScores.relevance.t, accuracy: calcPercent(catScores.relevance.c, catScores.relevance.t) },
-            nameAccuracy: { correct: catScores.name.c, total: catScores.name.t, accuracy: calcPercent(catScores.name.c, catScores.name.t) },
-            addressAccuracy: { correct: catScores.address.c, total: catScores.address.t, accuracy: calcPercent(catScores.address.c, catScores.address.t) },
-            pinAccuracy: { correct: catScores.pin.c, total: catScores.pin.t, accuracy: calcPercent(catScores.pin.c, catScores.pin.t) }
-          },
+  await addDoc(collection(db, "rater_submissions"), {
+    userId: auth.currentUser.uid,
+    raterEmail: auth.currentUser.email,
+    taskId: currentTask.id,
+    taskGroup: targetSet,
+    taskType: "search_2_0",
+    submittedAt: serverTimestamp(),
 
-          // The Ultimate Audit Trail: Exact Rater Inputs
-          rawRaterAnswers: answers
-        });
-     
-       // --- INSTANT ANTI-CHEAT LOCK ---
-        // Advance the database index immediately so a refresh skips this question
-        if (!reviewMode) {
-          const nextIndex = currentTaskIndex + 1;
-          await updateDoc(doc(db, 'users', auth.currentUser.uid, 'active_sessions', targetSet), {
-            currentIndex: nextIndex
-          });
-        } 
+    overall: {
+      correct: correctCount,
+      total: totalQuestions,
+      accuracy: calcPercent(correctCount, totalQuestions),
+    },
 
-     } catch (err) {
-        console.error("Failed to save submission analytics:", err);
-      } finally {
-        setSubmitting(false); // <--- ADD THIS
+    categories: {
+      navigational: {
+        correct: catScores.navigational.c,
+        total: catScores.navigational.t,
+        accuracy: calcPercent(catScores.navigational.c, catScores.navigational.t),
+      },
+      poiClosed: {
+        correct: catScores.poiClosed.c,
+        total: catScores.poiClosed.t,
+        accuracy: calcPercent(catScores.poiClosed.c, catScores.poiClosed.t),
+      },
+      relevance: {
+        correct: catScores.relevance.c,
+        total: catScores.relevance.t,
+        accuracy: calcPercent(catScores.relevance.c, catScores.relevance.t),
+      },
+      nameAccuracy: {
+        correct: catScores.name.c,
+        total: catScores.name.t,
+        accuracy: calcPercent(catScores.name.c, catScores.name.t),
+      },
+      addressAccuracy: {
+        correct: catScores.address.c,
+        total: catScores.address.t,
+        accuracy: calcPercent(catScores.address.c, catScores.address.t),
+      },
+      pinAccuracy: {
+        correct: catScores.pin.c,
+        total: catScores.pin.t,
+        accuracy: calcPercent(catScores.pin.c, catScores.pin.t),
+      },
+    },
+
+    rawRaterAnswers: answers,
+  });
+
+ if (!reviewMode) {
+  const nextIndex = currentTaskIndex + 1;
+
+  if (nextIndex >= tasks.length) {
+    await completeModule();
+  } else {
+    await updateDoc(
+      doc(db, "users", auth.currentUser.uid, "active_sessions", targetSet),
+      {
+        currentIndex: nextIndex,
       }
-    }
-  };
+    );
+  }
+}
+} catch (err) {
+  console.error("Failed to save submission analytics:", err);
+} finally {
+  setSubmitting(false);
+}
+}; // closes submitRating
 
- const nextTask = async () => { 
-    const nextIndex = currentTaskIndex + 1;
+const nextTask = async () => {
+  const nextIndex = currentTaskIndex + 1;
 
-    // The database was already updated during submitRating. 
-    // Just move the local UI forward.
-    if (nextIndex < tasks.length) {
-      setCurrentTaskIndex(nextIndex);
-      initializeAnswers(tasks[nextIndex]);
-    } else {
-      // EXAM COMPLETION PROTOCOL
-      if (!reviewMode && auth.currentUser) {
-        try {
-          // 1. Log the attempt count
-          await setDoc(doc(db, 'users', auth.currentUser.uid, 'attempts', targetSet), { 
-             count: increment(1), lastAttemptAt: serverTimestamp() 
-          }, { merge: true });
-          
-          // 2. Delete the session
-          await deleteDoc(doc(db, 'users', auth.currentUser.uid, 'active_sessions', targetSet));
-        } catch (err) {
-          console.error("Failed to finish exam:", err);
-        }
-      }
-      setShowCompletionModal(true);
-    }
-  };
+  if (nextIndex < tasks.length) {
+    setCurrentTaskIndex(nextIndex);
+    initializeAnswers(tasks[nextIndex], reviewData);
+  } else {
+    await completeModule();
+  }
+};
   const getFeedbackStyle = (resultId, field, goldValue) => {
     if (!isSubmitted) return styles.select;
     const raterValue = resultId ? answers[resultId][field] : answers[field];
@@ -477,9 +603,19 @@ const fetchTasksAndReviewData = async () => {
 
           {/* NEW: Toggle button logic based on Review Mode */}
           {!reviewMode ? (
-            <button onClick={submitRating} style={styles.btnGreen}>
-              {isSubmitted ? (currentTaskIndex === tasks.length - 1 ? "Finish Module" : "Load Next Task") : "Submit Rating"}
-            </button>
+            <button
+  onClick={submitRating}
+  style={styles.btnGreen}
+  disabled={submitting}
+>
+  {submitting
+    ? "Submitting..."
+    : isSubmitted
+      ? currentTaskIndex === tasks.length - 1
+        ? "Finish Module"
+        : "Load Next Task"
+      : "Submit Rating"}
+</button>
           ) : (
             <button onClick={nextTask} style={styles.btnGreen}>
                {currentTaskIndex === tasks.length - 1 ? "Finish Review" : "Next Question"}
@@ -807,7 +943,7 @@ const fetchTasksAndReviewData = async () => {
                         "nameAcc",
                         gold.nameAccuracy,
                       )}
-                      value={raterAns.nameAcc}
+                      value={raterAns.nameAcc ?? ""}
                       onChange={(e) =>
                         handleAnswerChange(
                           res.resultId,
@@ -904,7 +1040,7 @@ const fetchTasksAndReviewData = async () => {
                         "addressAcc",
                         gold.addressAccuracy,
                       )}
-                      value={raterAns.addressAcc}
+                     value={raterAns.addressAcc ?? ""}
                       onChange={(e) =>
                         handleAnswerChange(
                           res.resultId,
@@ -995,7 +1131,7 @@ const fetchTasksAndReviewData = async () => {
                         "pinAcc",
                         gold.pinAccuracy,
                       )}
-                      value={raterAns.pinAcc}
+                      value={raterAns.pinAcc ?? ""}
                       onChange={(e) =>
                         handleAnswerChange(
                           res.resultId,
@@ -1024,18 +1160,15 @@ const fetchTasksAndReviewData = async () => {
                   {/* 5. COMMENT BLOCK */}
                   <div style={styles.formGroup}>
                     <label style={styles.inputLabel}>Comment and Link</label>
-                    <textarea
-                      style={styles.textarea}
-                      value={raterAns.comment}
-                      onChange={(e) =>
-                        handleAnswerChange(
-                          res.resultId,
-                          "comment",
-                          e.target.value,
-                        )
-                      }
-                      placeholder="Add evaluation comments here..."
-                    />
+                  <textarea
+  style={styles.textarea}
+  value={raterAns.comment}
+  onChange={(e) =>
+    handleAnswerChange(res.resultId, "comment", e.target.value)
+  }
+  placeholder="Add evaluation comments here..."
+  disabled={isSubmitted}
+/>
                   </div>
                 </div>
               </div>
@@ -1046,7 +1179,6 @@ const fetchTasksAndReviewData = async () => {
     </div>
   );
 }
-
 // CSS-in-JS mimicking TryRating UI
 const styles = {
   container: {

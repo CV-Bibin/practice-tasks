@@ -74,12 +74,26 @@ export default function CreateSearch20Task() {
 
           // Restored POI Closed wipe logic
           if (field === "poiClosed" && newValue === true) {
-            updates.nameAcc = "";
-            updates.addressAcc = "";
-            updates.pinAcc = "";
-            updates.nameIssue = false;
-            updates.categoryIssue = false;
-          }
+  updates.nameAcc = null;
+  updates.addressAcc = null;
+  updates.pinAcc = null;
+  updates.nameIssue = null;
+  updates.categoryIssue = null;
+  updates.addrErrors = {
+    streetNum: false,
+    unit: false,
+    streetName: false,
+    subLoc: false,
+    loc: false,
+    region: false,
+    postal: false,
+    country: false,
+    notExist: false,
+    lang: false,
+    countrySpecific: false,
+    other: false,
+  };
+}
 
           return { ...r, ...updates };
         }
@@ -323,7 +337,8 @@ export default function CreateSearch20Task() {
               {/* Accuracy Dropdowns (Fade if POI is Closed) */}
               <div style={{ ...styles.formGroup, opacity: res.poiClosed ? 0.5 : 1 }}>
                 <label style={styles.label}>Name and Category Accuracy</label>
-                <select required={!res.poiClosed} disabled={res.poiClosed} style={styles.select} value={res.nameAcc} onChange={(e) => handleResultChange(res.id, "nameAcc", e.target.value)}>
+                <select required={!res.poiClosed} disabled={res.poiClosed} style={styles.select}
+                 value={res.nameAcc} onChange={(e) => handleResultChange(res.id, "nameAcc", e.target.value)}>
                   <option value="" disabled hidden>Select...</option>
                   <option value="n/a">n/a</option><option value="Correct">Correct</option><option value="Partially Correct">Partially Correct</option><option value="Incorrect">Incorrect</option><option value="Can't Verify">Can't Verify</option>
                 </select>
