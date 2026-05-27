@@ -19,7 +19,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   
   // State to manage which view is active in the dashboard
-  const [activeTab, setActiveTab] = useState('search20');
+  const [activeTab, setActiveTab] = useState('analytics');
 
   // Strict Security Check
   useEffect(() => {
@@ -102,7 +102,8 @@ export default function AdminDashboard() {
               style={activeTab === 'analytics' ? styles.activeMenuBtn : styles.menuBtn} 
               onClick={() => setActiveTab('analytics')}
             >
-              Rater Analytics
+              <span style={styles.menuIcon}>📊</span> Rater Analytics
+              
             </button>
             
             <button 

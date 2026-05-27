@@ -85,11 +85,15 @@ export default function SimulatorSearch20() {
   const targetSet = location.state?.targetSet;
   const reviewMode = location.state?.reviewMode;
   const [moduleCompleted, setModuleCompleted] = useState(false);
+  const returnPath = location.state?.returnPath || "/dashboard";
+const returnState = location.state?.returnState;
   
   const [tasks, setTasks] = useState([]);
   const [currentTaskIndex, setCurrentTaskIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
+  
 
   // NEW: Store past submissions for review mode
   const [reviewData, setReviewData] = useState(location.state?.reviewData || {});
@@ -165,9 +169,18 @@ const fetchTasksAndReviewData = async (confirmedUid) => {
             const iB = sessionData.shuffledIds.indexOf(b.id);
             return (iA > -1 ? iA : 999) - (iB > -1 ? iB : 999);
           });
-          setTasks(fetchedTasks);
-          setCurrentTaskIndex(sessionData.currentIndex);
-          initializeAnswers(fetchedTasks[sessionData.currentIndex]);
+          const savedIndex = sessionData.currentIndex || 0;
+
+setTasks(fetchedTasks);
+
+if (savedIndex >= fetchedTasks.length) {
+  await deleteDoc(doc(db, "users", confirmedUid, "active_sessions", targetSet));
+  setShowCompletionModal(true);
+  return;
+}
+
+setCurrentTaskIndex(savedIndex);
+initializeAnswers(fetchedTasks[savedIndex]);
         } else {
           // CREATE NEW SESSION
           fetchedTasks = shuffleArray(fetchedTasks);
@@ -227,7 +240,7 @@ const fetchTasksAndReviewData = async (confirmedUid) => {
       };
     });
     setAnswers(initialAnswers);
-    setIsSubmitted(false);
+   setIsSubmitted(reviewMode);
   };
 
 const emptyAddrErrors = {
@@ -563,9 +576,12 @@ const nextTask = async () => {
         <div style={styles.modalOverlay}>
           <div style={styles.modalBox}>
             <p style={styles.modalText}>{reviewMode ? "You have finished reviewing this module." : "no more tasks available"}</p>
-            <button style={styles.modalButton} onClick={() => navigate('/dashboard')}>
-              Return to Dashboard
-            </button>
+<button
+  style={styles.modalButton}
+  onClick={() => navigate(returnPath, { state: returnState })}
+>
+  {returnPath === "/admin" ? "Return to Admin Report" : "Return to Dashboard"}
+</button>
           </div>
         </div>
       )}
@@ -594,12 +610,12 @@ const nextTask = async () => {
           {reviewMode && <span style={{backgroundColor: '#fef08a', color: '#854d0e', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', marginRight: '8px'}}>REVIEW MODE</span>}
           
           <button style={styles.btnBlue}>Rating Guidelines</button>
-          <button
-            onClick={() => navigate("/dashboard")}
-            style={styles.btnLight}
-          >
-            Release Survey
-          </button>
+<button
+  onClick={() => navigate(returnPath, { state: returnState })}
+  style={styles.btnLight}
+>
+  {returnPath === "/admin" ? "Exit Review" : "Release Survey"}
+</button>
 
           {/* NEW: Toggle button logic based on Review Mode */}
           {!reviewMode ? (

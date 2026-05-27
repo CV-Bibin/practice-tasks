@@ -1,19 +1,21 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../../config/firebase";
 
 export default function RaterAnalytics() {
   const navigate = useNavigate();
+  const location = useLocation();
+ 
   const [raters, setRaters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedRater, setSelectedRater] = useState(null);
   const [activeTab, setActiveTab] = useState("overall");
   const [isLaunching, setIsLaunching] = useState(false); // To show loading state when fetching answers
 
-  useEffect(() => {
-    fetchAnalyticsData();
-  }, []);
+useEffect(() => {
+  fetchAnalyticsData();
+}, [location.state?.reopenRaterId, location.state?.raterReportTab]);
 
   const fetchAnalyticsData = async () => {
     setLoading(true);
@@ -64,7 +66,9 @@ export default function RaterAnalytics() {
 
           rater.recentActivity.push({
             id: doc.id, type: taskType, time: subTime,
-            score: sub.overall ? Math.round((sub.overall.correct / sub.overall.total) * 100) : 0
+            score: sub.overall?.total > 0
+  ? Math.round((sub.overall.correct / sub.overall.total) * 100)
+  : 0
           });
 
           if (sub.overall) {
@@ -94,7 +98,17 @@ export default function RaterAnalytics() {
         rater.recentActivity = rater.recentActivity.slice(0, 10);
       });
 
-      setRaters(Object.values(raterDataMap));
+     const raterList = Object.values(raterDataMap);
+setRaters(raterList);
+
+const reopenRaterId = location.state?.reopenRaterId;
+if (reopenRaterId) {
+  const raterToReopen = raterList.find((r) => r.id === reopenRaterId);
+  if (raterToReopen) {
+    setSelectedRater(raterToReopen);
+    setActiveTab(location.state?.raterReportTab || "search_2_0");
+  }
+}
 
     } catch (error) {
       console.error("Failed to fetch analytics:", error);
@@ -119,21 +133,29 @@ export default function RaterAnalytics() {
       const snap = await getDocs(q);
       let pastAnswersPayload = {};
       
-      snap.forEach(doc => {
-        const data = doc.data();
-        if (data.rawRaterAnswers) {
-          pastAnswersPayload = { ...pastAnswersPayload, ...data.rawRaterAnswers };
-        }
-      });
+    snap.forEach(doc => {
+  const data = doc.data();
+
+  if (data.taskId && data.rawRaterAnswers) {
+    pastAnswersPayload[data.taskId] = data.rawRaterAnswers;
+  }
+});
 
       // Navigate to simulator AND pass the data package
-      navigate('/simulate/search20', { 
-        state: { 
-          targetSet: setName, 
-          reviewMode: true, 
-          reviewData: pastAnswersPayload // The Simulator needs this!
-        }
-      });
+navigate('/simulate/search20', { 
+  state: { 
+    targetSet: setName, 
+    reviewMode: true,
+    reviewUid: selectedRater.id,
+    reviewData: pastAnswersPayload,
+    returnPath: "/admin",
+    returnState: {
+      activeTab: "analytics",
+      reopenRaterId: selectedRater.id,
+      raterReportTab: "search_2_0"
+    }
+  }
+});
     } catch (error) {
       console.error("Error pulling rater data:", error);
       alert("Could not load the rater's past answers.");
@@ -151,18 +173,46 @@ export default function RaterAnalytics() {
     return <span style={{ fontWeight: 'bold', color }}>{pct}%</span>;
   };
 
-  const getInsights = (s2Data) => {
-    if (s2Data.tasks === 0) return { strong: "N/A", weak: "N/A" };
-    const cats = [
-      { name: "Relevance", pct: calcPct(s2Data.relevance.c, s2Data.relevance.t) },
-      { name: "Name Accuracy", pct: calcPct(s2Data.name.c, s2Data.name.t) },
-      { name: "Address Accuracy", pct: calcPct(s2Data.address.c, s2Data.address.t) },
-      { name: "Pin Accuracy", pct: calcPct(s2Data.pin.c, s2Data.pin.t) }
-    ].filter(c => !isNaN(c.pct));
-    if (cats.length === 0) return { strong: "N/A", weak: "N/A" };
-    cats.sort((a, b) => b.pct - a.pct);
-    return { strong: cats[0].name, weak: cats[cats.length - 1].name };
+ const getInsights = (s2Data) => {
+  const cats = [
+    {
+      name: "Relevance",
+      c: s2Data.relevance.c,
+      t: s2Data.relevance.t,
+    },
+    {
+      name: "Name Accuracy",
+      c: s2Data.name.c,
+      t: s2Data.name.t,
+    },
+    {
+      name: "Address Accuracy",
+      c: s2Data.address.c,
+      t: s2Data.address.t,
+    },
+    {
+      name: "Pin Accuracy",
+      c: s2Data.pin.c,
+      t: s2Data.pin.t,
+    },
+  ]
+    .filter((cat) => cat.t > 0)
+    .map((cat) => ({
+      name: cat.name,
+      pct: calcPct(cat.c, cat.t),
+    }));
+
+  if (cats.length === 0) {
+    return { strong: "N/A", weak: "N/A" };
+  }
+
+  cats.sort((a, b) => b.pct - a.pct);
+
+  return {
+    strong: `${cats[0].name} (${cats[0].pct}%)`,
+    weak: `${cats[cats.length - 1].name} (${cats[cats.length - 1].pct}%)`,
   };
+};
 
   const VisualBar = ({ label, correct, total }) => {
     const pct = calcPct(correct, total);
