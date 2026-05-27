@@ -66,41 +66,41 @@ export default function CreateSearch20Task() {
   };
 
   const handleCheckboxToggle = (id, field) => {
-    setResults(
-      results.map((r) => {
-        if (r.id === id) {
-          const newValue = !r[field];
-          let updates = { [field]: newValue };
+  setResults(
+    results.map((r) => {
+      if (r.id === id) {
+        const newValue = !r[field];
+        let updates = { [field]: newValue };
 
-          // Restored POI Closed wipe logic
-          if (field === "poiClosed" && newValue === true) {
-  updates.nameAcc = null;
-  updates.addressAcc = null;
-  updates.pinAcc = null;
-  updates.nameIssue = null;
-  updates.categoryIssue = null;
-  updates.addrErrors = {
-    streetNum: false,
-    unit: false,
-    streetName: false,
-    subLoc: false,
-    loc: false,
-    region: false,
-    postal: false,
-    country: false,
-    notExist: false,
-    lang: false,
-    countrySpecific: false,
-    other: false,
-  };
-}
-
-          return { ...r, ...updates };
+        if (field === "poiClosed" && newValue === true) {
+          updates.nameAcc = "";
+          updates.addressAcc = "";
+          updates.pinAcc = "";
+          updates.nameIssue = false;
+          updates.categoryIssue = false;
+          updates.addrErrors = {
+            streetNum: false,
+            unit: false,
+            streetName: false,
+            subLoc: false,
+            loc: false,
+            region: false,
+            postal: false,
+            country: false,
+            notExist: false,
+            lang: false,
+            countrySpecific: false,
+            other: false,
+          };
         }
-        return r;
-      }),
-    );
-  };
+
+        return { ...r, ...updates };
+      }
+
+      return r;
+    })
+  );
+};
 
   const handleAddrErrorToggle = (id, errorField) => {
     setResults(
@@ -159,19 +159,19 @@ export default function CreateSearch20Task() {
             address: r.address,
             lat: parseFloat(getLat(r.coords)),
             lng: parseFloat(getLng(r.coords)),
-            goldStandard: {
-              unexpectedLanguage: r.unexpectedLanguage,
-              poiClosed: r.poiClosed, // Restored
-              relevance: r.relevance,
-              relUserIntent: r.relUserIntent,
-              relDistance: r.relDistance,
-              nameAccuracy: r.nameAcc,
-              nameIssue: r.nameIssue,
-              categoryIssue: r.categoryIssue,
-              addressAccuracy: r.addressAcc,
-              addressErrors: r.addrErrors,
-              pinAccuracy: r.pinAcc,
-            },
+           goldStandard: {
+  unexpectedLanguage: r.unexpectedLanguage,
+  poiClosed: r.poiClosed,
+  relevance: r.relevance,
+  relUserIntent: r.relUserIntent,
+  relDistance: r.relDistance,
+  nameAccuracy: r.poiClosed ? null : r.nameAcc,
+  nameIssue: r.poiClosed ? null : r.nameIssue,
+  categoryIssue: r.poiClosed ? null : r.categoryIssue,
+addressAccuracy: r.poiClosed ? null : r.addressAcc,
+addressErrors: r.poiClosed ? null : r.addrErrors,
+pinAccuracy: r.poiClosed ? null : r.pinAcc,
+},
           })),
         },
       };
