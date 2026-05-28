@@ -114,9 +114,27 @@ export default function QuestionManagement() {
         if (r.id === id) {
           const newValue = !r[field];
           let updates = { [field]: newValue };
-          if (field === "poiClosed" && newValue === true) {
-            updates.nameAcc = ""; updates.addressAcc = ""; updates.pinAcc = ""; updates.nameIssue = false; updates.categoryIssue = false;
-          }
+         if (field === "poiClosed" && newValue === true) {
+  updates.nameAcc = "";
+  updates.addressAcc = "";
+  updates.pinAcc = "";
+  updates.nameIssue = false;
+  updates.categoryIssue = false;
+  updates.addrErrors = {
+    streetNum: false,
+    unit: false,
+    streetName: false,
+    subLoc: false,
+    loc: false,
+    region: false,
+    postal: false,
+    country: false,
+    notExist: false,
+    lang: false,
+    countrySpecific: false,
+    other: false,
+  };
+}
           return { ...r, ...updates };
         }
         return r;
@@ -159,19 +177,19 @@ export default function QuestionManagement() {
           address: r.address,
           lat: parseFloat(getLat(r.coords)),
           lng: parseFloat(getLng(r.coords)),
-          goldStandard: {
-            unexpectedLanguage: r.unexpectedLanguage,
-            poiClosed: r.poiClosed,
-            relevance: r.relevance,
-            relUserIntent: r.relUserIntent,
-            relDistance: r.relDistance,
-            nameAccuracy: r.nameAcc,
-            nameIssue: r.nameIssue,
-            categoryIssue: r.categoryIssue,
-            addressAccuracy: r.addressAcc,
-            addressErrors: r.addrErrors,
-            pinAccuracy: r.pinAcc,
-          },
+        goldStandard: {
+  unexpectedLanguage: r.unexpectedLanguage,
+  poiClosed: r.poiClosed,
+  relevance: r.relevance,
+  relUserIntent: r.relUserIntent,
+  relDistance: r.relDistance,
+  nameAccuracy: r.poiClosed ? null : r.nameAcc,
+  nameIssue: r.poiClosed ? null : r.nameIssue,
+  categoryIssue: r.poiClosed ? null : r.categoryIssue,
+  addressAccuracy: r.poiClosed ? null : r.addressAcc,
+  addressErrors: r.poiClosed ? null : r.addrErrors,
+  pinAccuracy: r.poiClosed ? null : r.pinAcc,
+},
         })),
       };
 
@@ -259,6 +277,43 @@ export default function QuestionManagement() {
                   <LockGroup lockKey="ctx_aet" label="AET (Seconds)">
                     <input type="number" style={styles.input} name="aet" value={editingTask.taskContext.aet} onChange={handleContextChange} />
                   </LockGroup>
+                  <LockGroup lockKey="ctx_viewportAge" label="Viewport Age">
+  <select
+    style={styles.select}
+    name="viewportAge"
+    value={editingTask.taskContext.viewportAge}
+    onChange={handleContextChange}
+  >
+    <option value="FRESH">Fresh</option>
+    <option value="STALE">Stale</option>
+  </select>
+</LockGroup>
+
+<LockGroup lockKey="ctx_isNavigational" label="Is there a navigational result?">
+  <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+    <label style={styles.checkboxItem}>
+      <input
+        type="radio"
+        name="isNavigational"
+        value="Yes"
+        checked={editingTask.taskContext.isNavigational === "Yes"}
+        onChange={handleContextChange}
+      />
+      Yes
+    </label>
+
+    <label style={styles.checkboxItem}>
+      <input
+        type="radio"
+        name="isNavigational"
+        value="No"
+        checked={editingTask.taskContext.isNavigational === "No"}
+        onChange={handleContextChange}
+      />
+      No
+    </label>
+  </div>
+</LockGroup>
                   <LockGroup lockKey="ctx_location" label="Country & Locale">
                     <div style={{ display: "flex", gap: "8px" }}>
                       <select style={styles.select} name="country" value={editingTask.taskContext.country} onChange={handleContextChange}>
