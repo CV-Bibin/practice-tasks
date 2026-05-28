@@ -4,6 +4,7 @@ import { signOut, onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 
+
 export default function RaterDashboard() {
   const [metrics, setMetrics] = useState(null);
   const [liveSets, setLiveSets] = useState([]);
@@ -17,22 +18,90 @@ export default function RaterDashboard() {
   
   const navigate = useNavigate();
 
+
+
+
+const calculateMetricsFromSubmissions = async (uid) => {
+  const submissionsQuery = query(
+    collection(db, "rater_submissions"),
+    where("userId", "==", uid)
+  );
+
+  const submissionsSnap = await getDocs(submissionsQuery);
+
+  let overallCorrect = 0;
+  let overallTotal = 0;
+
+  let searchCorrect = 0;
+  let searchTotal = 0;
+
+  let autoCorrect = 0;
+  let autoTotal = 0;
+
+  let poiCorrect = 0;
+  let poiTotal = 0;
+
+  submissionsSnap.forEach((d) => {
+    const sub = d.data();
+
+    const correct = sub.overall?.correct || 0;
+    const total = sub.overall?.total || 0;
+
+    overallCorrect += correct;
+    overallTotal += total;
+
+    if (sub.taskType === "search_2_0") {
+      searchCorrect += correct;
+      searchTotal += total;
+    }
+
+    if (sub.taskType === "auto_complete") {
+      autoCorrect += correct;
+      autoTotal += total;
+    }
+
+    if (sub.taskType === "poi") {
+      poiCorrect += correct;
+      poiTotal += total;
+    }
+  });
+
+  const pct = (correct, total) =>
+    total > 0 ? Math.round((correct / total) * 100) : 0;
+
+  return {
+    totalTasksCompleted: submissionsSnap.size,
+    overallAccuracy: pct(overallCorrect, overallTotal),
+    search20Accuracy: pct(searchCorrect, searchTotal),
+    autoCompleteAccuracy: pct(autoCorrect, autoTotal),
+    poiAccuracy: pct(poiCorrect, poiTotal),
+  };
+};
+
+
+
+
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (!user) return navigate('/');
+      if (!user) {
+  setLoading(false);
+  navigate('/');
+  return;
+}
 
       try {
         // 1. Fetch User Profile
         const userRef = doc(db, 'users', user.uid);
         const userSnap = await getDoc(userRef);
 
-        if (userSnap.exists()) {
-          const userData = userSnap.data();
-          if (userData.role === 'admin') setIsAdmin(true);
-          setMetrics(userData.metrics || defaultMetrics);
-        } else {
-          setMetrics(defaultMetrics);
-        }
+       if (userSnap.exists()) {
+  const userData = userSnap.data();
+  if (userData.role === "admin") setIsAdmin(true);
+}
+
+const calculatedMetrics = await calculateMetricsFromSubmissions(user.uid);
+setMetrics(calculatedMetrics);
 
         // 2. Fetch LIVE Exam Sets
         const setsQuery = query(collection(db, 'exam_sets'), where('isDeployed', '==', true));
@@ -281,7 +350,6 @@ const canReview = hasReachedLimit && set.answersRevealed;
   );
 }
 
-const defaultMetrics = { totalTasksCompleted: 0, overallAccuracy: 0, search20Accuracy: 0, autoCompleteAccuracy: 0, poiAccuracy: 0 };
 
 function MetricCard({ title, value, isWarning, isNeutral }) {
   return (
