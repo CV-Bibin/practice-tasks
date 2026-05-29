@@ -62,7 +62,13 @@ export default function SetManagement() {
     }
   };
 
-  const uniqueSets = ["Unassigned", ...new Set(tasks.map(t => t.group).filter(g => g !== "Unassigned"))];
+ const uniqueSets = [
+  "Unassigned",
+  ...new Set([
+    ...Object.keys(setSettings),
+    ...tasks.map((t) => t.group).filter((g) => g !== "Unassigned"),
+  ]),
+];
   const activeTasks = tasks.filter(t => t.group === activeSet);
   const availableTasks = tasks.filter(t => t.group !== activeSet && t.title.toLowerCase().includes(searchQuery.toLowerCase()));
 
@@ -113,7 +119,11 @@ export default function SetManagement() {
     const batch = writeBatch(db);
     tasks.filter(t => t.group === oldName).forEach(t => batch.update(doc(db, "tasks", t.id), { group: newName.trim() }));
     await batch.commit();
-    const oldSettings = setSettings[oldName] || { isDeployed: false, attemptLimit: 1 };
+    const oldSettings = setSettings[oldName] || {
+  isDeployed: false,
+  attemptLimit: 1,
+  answersRevealed: false,
+};
     await setDoc(doc(db, "exam_sets", newName.trim()), oldSettings);
     await deleteDoc(doc(db, "exam_sets", oldName));
     fetchData(); setActiveSet(newName.trim());
@@ -194,11 +204,11 @@ export default function SetManagement() {
               </div>
               <div style={styles.statBox}>
                 <div style={{ ...styles.statValue, color: '#10b981' }}>{completedCount}</div>
-                <div style={styles.statLabel}>Completed</div>
+                <div style={styles.statLabel}>Started</div>
               </div>
               <div style={styles.statBox}>
                 <div style={{ ...styles.statValue, color: '#f59e0b' }}>{remainingCount}</div>
-                <div style={styles.statLabel}>Remaining</div>
+                <div style={styles.statLabel}>Not Started</div>
               </div>
             </div>
 
@@ -321,5 +331,80 @@ const styles = {
   btnSecondary: { backgroundColor: "white", color: "#374151", border: "1px solid #d1d5db", padding: "10px 16px", borderRadius: "6px", fontWeight: "bold", cursor: "pointer" },
   removeBtn: { backgroundColor: "#fee2e2", color: "#ef4444", border: "none", borderRadius: "4px", padding: "4px 8px", cursor: "pointer" },
   btnSmallAction: { backgroundColor: "#f0fdf4", color: "#15803d", border: "none", padding: "4px 8px", borderRadius: "4px", cursor: "pointer", fontWeight: "bold" },
-  iconBtn: { background: "none", border: "none", cursor: "pointer" }
+  iconBtn: { background: "none", border: "none", cursor: "pointer" },
+  countBadge: {
+  backgroundColor: "#f1f5f9",
+  color: "#64748b",
+  borderRadius: "999px",
+  padding: "2px 8px",
+  fontSize: "11px",
+  fontWeight: "bold",
+},
+
+setActions: {
+  display: "flex",
+  gap: "4px",
+},
+
+statusPill: {
+  display: "flex",
+  alignItems: "center",
+  gap: "8px",
+  marginRight: "16px",
+},
+
+emptyState: {
+  backgroundColor: "white",
+  border: "1px dashed #cbd5e1",
+  borderRadius: "8px",
+  padding: "40px",
+  textAlign: "center",
+  color: "#64748b",
+},
+
+modalOverlay: {
+  position: "fixed",
+  inset: 0,
+  backgroundColor: "rgba(15,23,42,0.65)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 1000,
+},
+
+modalContent: {
+  backgroundColor: "white",
+  borderRadius: "12px",
+  padding: "24px",
+  width: "100%",
+  maxWidth: "700px",
+  maxHeight: "85vh",
+  overflow: "hidden",
+},
+
+searchInput: {
+  width: "100%",
+  padding: "10px",
+  border: "1px solid #cbd5e1",
+  borderRadius: "6px",
+  marginBottom: "16px",
+  boxSizing: "border-box",
+},
+
+modalScrollArea: {
+  maxHeight: "50vh",
+  overflowY: "auto",
+  display: "flex",
+  flexDirection: "column",
+  gap: "8px",
+},
+
+modalTaskCard: {
+  padding: "12px",
+  borderRadius: "8px",
+  display: "flex",
+  gap: "12px",
+  alignItems: "center",
+  cursor: "pointer",
+},
 };
