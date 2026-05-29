@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
 import { collection, getDocs, updateDoc, doc, writeBatch, setDoc, deleteDoc, query, where } from "firebase/firestore";
 import { db } from "../config/firebase";
+import { useDialog } from "../components/shared/CustomDialogProvider";
 
 export default function SetManagement() {
   const [tasks, setTasks] = useState([]);
-  const [setSettings, setSetSettings] = useState({}); 
+  const [setSettings, setSetSettings] = useState({});
   const [activeSet, setActiveSet] = useState("Unassigned");
   const [loading, setLoading] = useState(false);
+  const { alertBox, confirmBox, promptBox } = useDialog();
 
   // NEW: Analytics States
   const [totalRaters, setTotalRaters] = useState(0);
@@ -62,13 +64,13 @@ export default function SetManagement() {
     }
   };
 
- const uniqueSets = [
-  "Unassigned",
-  ...new Set([
-    ...Object.keys(setSettings),
-    ...tasks.map((t) => t.group).filter((g) => g !== "Unassigned"),
-  ]),
-];
+  const uniqueSets = [
+    "Unassigned",
+    ...new Set([
+      ...Object.keys(setSettings),
+      ...tasks.map((t) => t.group).filter((g) => g !== "Unassigned"),
+    ]),
+  ];
   const activeTasks = tasks.filter(t => t.group === activeSet);
   const availableTasks = tasks.filter(t => t.group !== activeSet && t.title.toLowerCase().includes(searchQuery.toLowerCase()));
 
@@ -78,22 +80,45 @@ export default function SetManagement() {
 
   // --- EXAM OPERATIONS ---
   const toggleDeployment = async () => {
-    if (activeTasks.length === 0) return alert("Add tasks before deploying.");
-    const newStatus = !activeSetData.isDeployed;
-    if (window.confirm(newStatus ? `Deploy "${activeSet}" to raters now?` : `Unpublish "${activeSet}"?`)) {
-      const payload = { ...activeSetData, isDeployed: newStatus };
-      await setDoc(doc(db, "exam_sets", activeSet), payload, { merge: true });
-      setSetSettings(prev => ({ ...prev, [activeSet]: payload }));
+    if (activeTasks.length === 0) {
+      await alertBox({
+        title: "Cannot deploy set",
+        message: "Add tasks before deploying.",
+      });
+      return;
     }
+
+    const newStatus = !activeSetData.isDeployed;
+
+    const confirmed = await confirmBox({
+      title: newStatus ? "Deploy set?" : "Unpublish set?",
+      message: newStatus
+        ? `Deploy "${activeSet}" to raters now?`
+        : `Unpublish "${activeSet}"?`,
+    });
+
+    if (!confirmed) return;
+
+    const payload = { ...activeSetData, isDeployed: newStatus };
+    await setDoc(doc(db, "exam_sets", activeSet), payload, { merge: true });
+    setSetSettings((prev) => ({ ...prev, [activeSet]: payload }));
   };
 
   const toggleRevealAnswers = async () => {
     const newStatus = !activeSetData.answersRevealed;
-    if (window.confirm(newStatus ? `Reveal answers for "${activeSet}"? Raters who finished will be able to review their score.` : `Hide answers again?`)) {
-      const payload = { ...activeSetData, answersRevealed: newStatus };
-      await setDoc(doc(db, "exam_sets", activeSet), payload, { merge: true });
-      setSetSettings(prev => ({ ...prev, [activeSet]: payload }));
-    }
+
+    const confirmed = await confirmBox({
+      title: newStatus ? "Reveal answers?" : "Hide answers?",
+      message: newStatus
+        ? `Reveal answers for "${activeSet}"? Raters who finished will be able to review their score.`
+        : `Hide answers again for "${activeSet}"?`,
+    });
+
+    if (!confirmed) return;
+
+    const payload = { ...activeSetData, answersRevealed: newStatus };
+    await setDoc(doc(db, "exam_sets", activeSet), payload, { merge: true });
+    setSetSettings((prev) => ({ ...prev, [activeSet]: payload }));
   };
 
   const updateAttemptLimit = async (limit) => {
@@ -104,44 +129,123 @@ export default function SetManagement() {
 
   // --- SET & TASK OPERATIONS ---
   const createNewSet = async () => {
-    const newName = window.prompt("Enter new Set Name:");
-    if (newName && newName.trim() !== "" && !uniqueSets.includes(newName.trim())) {
-      await setDoc(doc(db, "exam_sets", newName.trim()), { isDeployed: false, attemptLimit: 1, answersRevealed: false });
-      setSetSettings(prev => ({ ...prev, [newName.trim()]: { isDeployed: false, attemptLimit: 1, answersRevealed: false } }));
-      setActiveSet(newName.trim()); 
+    const newName = await promptBox({
+      title: "Create new set",
+      message: "Enter new Set Name:",
+    });
+
+    const trimmedName = newName?.trim();
+
+    if (!trimmedName) return;
+
+    if (uniqueSets.includes(trimmedName)) {
+      await alertBox({
+        title: "Set already exists",
+        message: `"${trimmedName}" already exists. Please choose another name.`,
+      });
+      return;
     }
+
+    await setDoc(doc(db, "exam_sets", trimmedName), {
+      isDeployed: false,
+      attemptLimit: 1,
+      answersRevealed: false,
+    });
+
+    setSetSettings((prev) => ({
+      ...prev,
+      [trimmedName]: {
+        isDeployed: false,
+        attemptLimit: 1,
+        answersRevealed: false,
+      },
+    }));
+
+    setActiveSet(trimmedName);
   };
 
-  const renameSet = async (oldName) => {
-    if (oldName === "Unassigned") return;
-    const newName = window.prompt(`Rename "${oldName}" to:`, oldName);
-    if (!newName || newName.trim() === "" || newName === oldName) return;
-    const batch = writeBatch(db);
-    tasks.filter(t => t.group === oldName).forEach(t => batch.update(doc(db, "tasks", t.id), { group: newName.trim() }));
-    await batch.commit();
-    const oldSettings = setSettings[oldName] || {
-  isDeployed: false,
-  attemptLimit: 1,
-  answersRevealed: false,
-};
-    await setDoc(doc(db, "exam_sets", newName.trim()), oldSettings);
-    await deleteDoc(doc(db, "exam_sets", oldName));
-    fetchData(); setActiveSet(newName.trim());
+ const renameSet = async (oldName) => {
+  if (oldName === "Unassigned") return;
+
+  const newName = await promptBox({
+    title: "Rename set",
+    message: `Rename "${oldName}" to:`,
+    defaultValue: oldName,
+  });
+
+  const trimmedName = newName?.trim();
+
+  if (!trimmedName || trimmedName === oldName) return;
+
+  if (uniqueSets.includes(trimmedName)) {
+    await alertBox({
+      title: "Set already exists",
+      message: `"${trimmedName}" already exists. Please choose another name.`,
+    });
+    return;
+  }
+
+  const batch = writeBatch(db);
+
+  tasks
+    .filter((t) => t.group === oldName)
+    .forEach((t) => {
+      batch.update(doc(db, "tasks", t.id), { group: trimmedName });
+    });
+
+  await batch.commit();
+
+  const oldSettings = setSettings[oldName] || {
+    isDeployed: false,
+    attemptLimit: 1,
+    answersRevealed: false,
   };
+
+  await setDoc(doc(db, "exam_sets", trimmedName), oldSettings);
+  await deleteDoc(doc(db, "exam_sets", oldName));
+
+  await fetchData();
+  setActiveSet(trimmedName);
+};
 
   const deleteSet = async (setName) => {
-    if (setName === "Unassigned" || !window.confirm(`Delete "${setName}"? Tasks move to Unassigned.`)) return;
-    const batch = writeBatch(db);
-    tasks.filter(t => t.group === setName).forEach(t => batch.update(doc(db, "tasks", t.id), { group: "Unassigned" }));
-    await batch.commit();
-    await deleteDoc(doc(db, "exam_sets", setName));
-    fetchData(); setActiveSet("Unassigned");
-  };
+  if (setName === "Unassigned") return;
 
-  const removeTaskFromSet = async (taskId) => {
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, group: "Unassigned" } : t));
-    await updateDoc(doc(db, "tasks", taskId), { group: "Unassigned" });
-  };
+  const confirmed = await confirmBox({
+    title: "Delete set?",
+    message: `Delete "${setName}"? Tasks will move to Unassigned.`,
+  });
+
+  if (!confirmed) return;
+
+  const batch = writeBatch(db);
+
+  tasks
+    .filter((t) => t.group === setName)
+    .forEach((t) => {
+      batch.update(doc(db, "tasks", t.id), { group: "Unassigned" });
+    });
+
+  await batch.commit();
+  await deleteDoc(doc(db, "exam_sets", setName));
+
+  await fetchData();
+  setActiveSet("Unassigned");
+};
+const removeTaskFromSet = async (taskId) => {
+  const confirmed = await confirmBox({
+    title: "Remove question?",
+    message: "Remove this question from the set? It will move to Unassigned.",
+  });
+
+  if (!confirmed) return;
+
+  setTasks((prev) =>
+    prev.map((t) => (t.id === taskId ? { ...t, group: "Unassigned" } : t))
+  );
+
+  await updateDoc(doc(db, "tasks", taskId), { group: "Unassigned" });
+};
 
   const addSelectedTasksToSet = async () => {
     if (selectedToAdd.length === 0) return;
@@ -188,14 +292,14 @@ export default function SetManagement() {
           </div>
           <div style={{ display: "flex", gap: "12px" }}>
             <button onClick={fetchData} style={styles.btnSecondary}>Refresh</button>
-            {activeSet !== "Unassigned" && <button onClick={() => setIsAddModalOpen(true)} style={{...styles.btnSecondary, color: '#3b82f6', borderColor: '#3b82f6'}}>➕ Add Questions to Set</button>}
+            {activeSet !== "Unassigned" && <button onClick={() => setIsAddModalOpen(true)} style={{ ...styles.btnSecondary, color: '#3b82f6', borderColor: '#3b82f6' }}>➕ Add Questions to Set</button>}
           </div>
         </div>
 
-   {/* --- PRO-LEVEL DEPLOYMENT PANEL --- */}
+        {/* --- PRO-LEVEL DEPLOYMENT PANEL --- */}
         {activeSet !== "Unassigned" && (
           <div style={styles.deploymentPanel}>
-            
+
             {/* ZONE 1: Analytics */}
             <div style={styles.panelZoneAnalytics}>
               <div style={styles.statBox}>
@@ -225,16 +329,16 @@ export default function SetManagement() {
 
               <div style={styles.controlGroup}>
                 <span style={styles.controlLabel}>Review Mode</span>
-                <button 
-                  onClick={toggleRevealAnswers} 
+                <button
+                  onClick={toggleRevealAnswers}
                   style={{
-                    ...styles.btnReview, 
-                    backgroundColor: activeSetData.answersRevealed ? '#ecfdf5' : '#f8fafc', 
-                    borderColor: activeSetData.answersRevealed ? '#10b981' : '#cbd5e1', 
+                    ...styles.btnReview,
+                    backgroundColor: activeSetData.answersRevealed ? '#ecfdf5' : '#f8fafc',
+                    borderColor: activeSetData.answersRevealed ? '#10b981' : '#cbd5e1',
                     color: activeSetData.answersRevealed ? '#059669' : '#475569'
                   }}
                 >
-                  <span style={{ fontSize: '16px' }}>{activeSetData.answersRevealed ? "👁️" : "🙈"}</span> 
+                  <span style={{ fontSize: '16px' }}>{activeSetData.answersRevealed ? "👁️" : "🙈"}</span>
                   {activeSetData.answersRevealed ? "Revealed" : "Hidden"}
                 </button>
               </div>
@@ -248,8 +352,8 @@ export default function SetManagement() {
                   {activeSetData.isDeployed ? "Status: Live" : "Status: Draft"}
                 </span>
               </div>
-              <button 
-                onClick={toggleDeployment} 
+              <button
+                onClick={toggleDeployment}
                 style={activeSetData.isDeployed ? styles.btnUnpublish : styles.btnDeploy}
               >
                 {activeSetData.isDeployed ? "🛑 Unpublish Set" : "🚀 Deploy to Raters"}
@@ -265,7 +369,7 @@ export default function SetManagement() {
             <div key={task.id} style={styles.taskCard}>
               <div>
                 <h4 style={{ margin: "0 0 4px 0", color: "#1e293b", fontSize: "15px" }}>{task.title}</h4>
-                <div style={{ fontSize: "12px", color: "#64748b", fontWeight: "bold" }}>{task.type.replace(/_/g, ' ').toUpperCase()} • ID: {task.id.substring(0,6)}</div>
+                <div style={{ fontSize: "12px", color: "#64748b", fontWeight: "bold" }}>{task.type.replace(/_/g, ' ').toUpperCase()} • ID: {task.id.substring(0, 6)}</div>
               </div>
               {activeSet !== "Unassigned" && <button onClick={() => removeTaskFromSet(task.id)} style={styles.removeBtn}>✖</button>}
             </div>
@@ -333,78 +437,78 @@ const styles = {
   btnSmallAction: { backgroundColor: "#f0fdf4", color: "#15803d", border: "none", padding: "4px 8px", borderRadius: "4px", cursor: "pointer", fontWeight: "bold" },
   iconBtn: { background: "none", border: "none", cursor: "pointer" },
   countBadge: {
-  backgroundColor: "#f1f5f9",
-  color: "#64748b",
-  borderRadius: "999px",
-  padding: "2px 8px",
-  fontSize: "11px",
-  fontWeight: "bold",
-},
+    backgroundColor: "#f1f5f9",
+    color: "#64748b",
+    borderRadius: "999px",
+    padding: "2px 8px",
+    fontSize: "11px",
+    fontWeight: "bold",
+  },
 
-setActions: {
-  display: "flex",
-  gap: "4px",
-},
+  setActions: {
+    display: "flex",
+    gap: "4px",
+  },
 
-statusPill: {
-  display: "flex",
-  alignItems: "center",
-  gap: "8px",
-  marginRight: "16px",
-},
+  statusPill: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    marginRight: "16px",
+  },
 
-emptyState: {
-  backgroundColor: "white",
-  border: "1px dashed #cbd5e1",
-  borderRadius: "8px",
-  padding: "40px",
-  textAlign: "center",
-  color: "#64748b",
-},
+  emptyState: {
+    backgroundColor: "white",
+    border: "1px dashed #cbd5e1",
+    borderRadius: "8px",
+    padding: "40px",
+    textAlign: "center",
+    color: "#64748b",
+  },
 
-modalOverlay: {
-  position: "fixed",
-  inset: 0,
-  backgroundColor: "rgba(15,23,42,0.65)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 1000,
-},
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    backgroundColor: "rgba(15,23,42,0.65)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1000,
+  },
 
-modalContent: {
-  backgroundColor: "white",
-  borderRadius: "12px",
-  padding: "24px",
-  width: "100%",
-  maxWidth: "700px",
-  maxHeight: "85vh",
-  overflow: "hidden",
-},
+  modalContent: {
+    backgroundColor: "white",
+    borderRadius: "12px",
+    padding: "24px",
+    width: "100%",
+    maxWidth: "700px",
+    maxHeight: "85vh",
+    overflow: "hidden",
+  },
 
-searchInput: {
-  width: "100%",
-  padding: "10px",
-  border: "1px solid #cbd5e1",
-  borderRadius: "6px",
-  marginBottom: "16px",
-  boxSizing: "border-box",
-},
+  searchInput: {
+    width: "100%",
+    padding: "10px",
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    marginBottom: "16px",
+    boxSizing: "border-box",
+  },
 
-modalScrollArea: {
-  maxHeight: "50vh",
-  overflowY: "auto",
-  display: "flex",
-  flexDirection: "column",
-  gap: "8px",
-},
+  modalScrollArea: {
+    maxHeight: "50vh",
+    overflowY: "auto",
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+  },
 
-modalTaskCard: {
-  padding: "12px",
-  borderRadius: "8px",
-  display: "flex",
-  gap: "12px",
-  alignItems: "center",
-  cursor: "pointer",
-},
+  modalTaskCard: {
+    padding: "12px",
+    borderRadius: "8px",
+    display: "flex",
+    gap: "12px",
+    alignItems: "center",
+    cursor: "pointer",
+  },
 };

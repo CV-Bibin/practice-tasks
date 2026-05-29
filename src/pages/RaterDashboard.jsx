@@ -97,9 +97,16 @@ const calculateMetricsFromSubmissions = async (uid) => {
 
        if (userSnap.exists()) {
   const userData = userSnap.data();
+
+  if (userData.status === "suspended") {
+    alert("Your account has been suspended. Please contact an administrator.");
+    await signOut(auth);
+    navigate("/");
+    return;
+  }
+
   if (userData.role === "admin") setIsAdmin(true);
 }
-
 const calculatedMetrics = await calculateMetricsFromSubmissions(user.uid);
 setMetrics(calculatedMetrics);
 

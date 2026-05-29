@@ -1,13 +1,17 @@
 import { useState, useEffect } from 'react';
 import { collection, getDocs, updateDoc, doc, deleteDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import { useDialog } from "../components/shared/CustomDialogProvider";
 
 export default function UserManagement() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { alertBox, confirmBox } = useDialog();
 
   // --- 1. DEFINE YOUR SUPER ADMIN ---
   const SUPER_ADMIN = 'iambibin.cv@gmail.com';
+  const isSuperAdminEmail = (email) =>
+  email?.toLowerCase() === SUPER_ADMIN.toLowerCase();
 
   useEffect(() => {
     fetchUsers();
@@ -32,10 +36,15 @@ export default function UserManagement() {
   };
 
   const updateUserRole = async (userId, email, newRole) => {
-    if (email === SUPER_ADMIN) {
-      alert("Action denied: Super Admin role cannot be changed.");
-      return;
-    }
+
+ if (isSuperAdminEmail(email)) {
+  await alertBox({
+  title: "Action denied",
+  message: "Super Admin role cannot be changed.",
+});
+
+  return;
+}
     try {
       await updateDoc(doc(db, 'users', userId), { role: newRole });
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
@@ -45,10 +54,13 @@ export default function UserManagement() {
   };
 
   const toggleUserStatus = async (userId, email, currentStatus) => {
-    if (email === SUPER_ADMIN) {
-      alert("Action denied: Super Admin cannot be suspended.");
-      return;
-    }
+  if (isSuperAdminEmail(email)) {
+  await alertBox({
+    title: "Action denied",
+    message: "Super Admin cannot be suspended.",
+  });
+  return;
+}
     const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
     try {
       await updateDoc(doc(db, 'users', userId), { status: newStatus });
@@ -59,13 +71,21 @@ export default function UserManagement() {
   };
 
   const deleteUser = async (userId, email) => {
-    if (email === SUPER_ADMIN) {
-      alert("Action denied: Super Admin cannot be deleted.");
-      return;
-    }
+  if (isSuperAdminEmail(email)) {
+  await alertBox({
+    title: "Action denied",
+    message: "Super Admin cannot be deleted.",
+  });
+  return;
+}
     
     // Add a confirmation prompt before deleting
-    if (window.confirm(`Are you sure you want to completely delete ${email}? They will lose all access to the platform.`)) {
+    const confirmed = await confirmBox({
+  title: "Delete user?",
+  message: `Are you sure you want to completely delete ${email}?`,
+});
+
+if (confirmed) {
       try {
         await deleteDoc(doc(db, 'users', userId));
         setUsers(prev => prev.filter(u => u.id !== userId)); // Remove from UI
@@ -96,7 +116,7 @@ export default function UserManagement() {
         <tbody>
           {users.length > 0 ? (
             users.map(user => {
-              const isSuperAdmin = user.email === SUPER_ADMIN;
+              const isSuperAdmin = isSuperAdminEmail(user.email);
               
               return (
                 <tr key={user.id} style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: user.status === 'suspended' ? '#fef2f2' : 'white' }}>
