@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { collection, getDocs, updateDoc, deleteDoc, doc, query, where } from "firebase/firestore";
 import { db } from "../config/firebase";
+import { useDialog } from "../components/shared/CustomDialogProvider";
 
 const getLat = (coords) => coords?.split(",")[0]?.trim() || "";
 const getLng = (coords) => coords?.split(",")[1]?.trim() || "";
@@ -10,6 +11,7 @@ export default function QuestionManagement() {
   const [activeTab, setActiveTab] = useState("search_2_0");
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(false);
+  const { alertBox, confirmBox } = useDialog();
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
@@ -43,16 +45,31 @@ export default function QuestionManagement() {
     }
   };
 
-  const deleteQuestion = async (questionId) => {
-    if (window.confirm("Are you sure you want to delete this question?")) {
-      try {
-        await deleteDoc(doc(db, "tasks", questionId));
-        setQuestions((prev) => prev.filter((q) => q.id !== questionId));
-      } catch (error) {
-        console.error("Error deleting question:", error);
-      }
-    }
-  };
+const deleteQuestion = async (questionId) => {
+  const confirmed = await confirmBox({
+    title: "Delete question?",
+    message: "Are you sure you want to delete this question? This action cannot be undone.",
+  });
+
+  if (!confirmed) return;
+
+  try {
+    await deleteDoc(doc(db, "tasks", questionId));
+    setQuestions((prev) => prev.filter((q) => q.id !== questionId));
+
+    await alertBox({
+      title: "Question deleted",
+      message: "The question was deleted successfully.",
+    });
+  } catch (error) {
+    console.error("Error deleting question:", error);
+
+    await alertBox({
+      title: "Delete failed",
+      message: "Could not delete the question. Please try again.",
+    });
+  }
+};
 
   const openEditModal = (task) => {
     const tData = task.rawDoc.taskData || {};
@@ -193,12 +210,22 @@ export default function QuestionManagement() {
         })),
       };
 
-      await updateDoc(doc(db, "tasks", editingTask.id), payload);
-      fetchQuestions(activeTab);
-      setIsEditModalOpen(false);
-    } catch (error) {
-      console.error("Error saving task:", error);
-    }
+     await updateDoc(doc(db, "tasks", editingTask.id), payload);
+await fetchQuestions(activeTab);
+setIsEditModalOpen(false);
+
+await alertBox({
+  title: "Changes saved",
+  message: "The question was updated successfully.",
+});
+   } catch (error) {
+  console.error("Error saving task:", error);
+
+  await alertBox({
+    title: "Save failed",
+    message: "Could not save the question changes. Please try again.",
+  });
+}
   };
 
   const toggleLock = (key) => setUnlockedFields((p) => ({ ...p, [key]: !p[key] }));

@@ -852,6 +852,21 @@ const nextTask = async () => {
                     />
                     Business/POI is closed or does not exist
                   </label>
+                  {isSubmitted && (
+  <div
+    style={{
+      fontSize: "12px",
+      fontWeight: "bold",
+      marginTop: "-4px",
+      marginBottom: "8px",
+      color: raterAns.poiClosed === gold.poiClosed ? "#16a34a" : "#ef4444",
+    }}
+  >
+    {raterAns.poiClosed === gold.poiClosed
+      ? "Correct"
+      : `Correct Answer: ${gold.poiClosed ? "Checked" : "Unchecked"}`}
+  </div>
+)}
 
                   {/* 1. RELEVANCE BLOCK */}
                   <div style={styles.formGroup}>
@@ -954,11 +969,11 @@ const nextTask = async () => {
                   >
                     <label style={styles.inputLabel}>Name Accuracy</label>
                     <select
-                      style={getFeedbackStyle(
-                        res.resultId,
-                        "nameAcc",
-                        gold.nameAccuracy,
-                      )}
+                      style={
+  raterAns.poiClosed || gold.poiClosed
+    ? styles.select
+    : getFeedbackStyle(res.resultId, "nameAcc", gold.nameAccuracy)
+}
                       value={raterAns.nameAcc ?? ""}
                       onChange={(e) =>
                         handleAnswerChange(
@@ -1051,11 +1066,11 @@ const nextTask = async () => {
                   >
                     <label style={styles.inputLabel}>Address Accuracy</label>
                     <select
-                      style={getFeedbackStyle(
-                        res.resultId,
-                        "addressAcc",
-                        gold.addressAccuracy,
-                      )}
+                     style={
+  raterAns.poiClosed || gold.poiClosed
+    ? styles.select
+    : getFeedbackStyle(res.resultId, "addressAcc", gold.addressAccuracy)
+}
                      value={raterAns.addressAcc ?? ""}
                       onChange={(e) =>
                         handleAnswerChange(
@@ -1083,15 +1098,33 @@ const nextTask = async () => {
                             Correct Answer: {gold.addressAccuracy}
                           </div>
                         )}
-                        {gold.addressAccuracy === "Incorrect" && (
-                          <div style={styles.inlineError}>
-                            Correct Address Errors:{" "}
-                            {Object.keys(gold.addressErrors || {})
-                              .filter((k) => gold.addressErrors[k])
-                              .map((k) => `[x] ${addrLabels[k]}`)
-                              .join(", ") || "None"}
-                          </div>
-                        )}
+                       {gold.addressAccuracy === "Incorrect" && (() => {
+  const addrKeys = Object.keys(addrLabels);
+
+  const addressErrorsCorrect = addrKeys.every(
+    (key) =>
+      Boolean(raterAns.addrErrors?.[key]) ===
+      Boolean(gold.addressErrors?.[key])
+  );
+
+  return (
+    <div
+      style={{
+        ...styles.inlineError,
+        color: addressErrorsCorrect ? "#16a34a" : "#ef4444",
+      }}
+    >
+      {addressErrorsCorrect
+        ? "Address error flags correct"
+        : `Correct Address Errors: ${
+            addrKeys
+              .filter((k) => gold.addressErrors?.[k])
+              .map((k) => `[x] ${addrLabels[k]}`)
+              .join(", ") || "None"
+          }`}
+    </div>
+  );
+})()}
                       </>
                     )}
 
@@ -1142,11 +1175,11 @@ const nextTask = async () => {
                   >
                     <label style={styles.inputLabel}>Pin Accuracy</label>
                     <select
-                      style={getFeedbackStyle(
-                        res.resultId,
-                        "pinAcc",
-                        gold.pinAccuracy,
-                      )}
+                      style={
+  raterAns.poiClosed || gold.poiClosed
+    ? styles.select
+    : getFeedbackStyle(res.resultId, "pinAcc", gold.pinAccuracy)
+}
                       value={raterAns.pinAcc ?? ""}
                       onChange={(e) =>
                         handleAnswerChange(
