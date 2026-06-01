@@ -3,21 +3,22 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth'; 
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 
 
 // Import our modular admin components
 import CreateSearch20Task from '../components/admin/CreateSearch20Task';
-import UserManagement from './UserManagement'; 
-import QuestionManagement from './QuestionManagement'; 
+import UserManagement from './UserManagement';
+import QuestionManagement from './QuestionManagement';
 import SetManagement from './SetManagement';
 import RaterAnalytics from '../components/admin/RaterAnalytics';
+import RaterLeaderboardProfile from './RaterLeaderboardProfile';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [loading, setLoading] = useState(true);
-  
+
   // State to manage which view is active in the dashboard
   const [activeTab, setActiveTab] = useState('analytics');
 
@@ -61,7 +62,7 @@ export default function AdminDashboard() {
       {/* Top Header */}
       <header style={styles.header}>
         <h1 style={styles.headerTitle}>Admin Command Center</h1>
-        
+
         {/* Button Group for Header */}
         <div style={{ display: 'flex', gap: '12px' }}>
           <button style={styles.navBtn} onClick={() => navigate('/dashboard')}>Switch to Rater View</button>
@@ -76,20 +77,20 @@ export default function AdminDashboard() {
         <aside style={styles.sidebar}>
           <div style={styles.menuGroup}>
             <h4 style={styles.menuLabel}>Task Creation</h4>
-            <button 
-              style={activeTab === 'search20' ? styles.activeMenuBtn : styles.menuBtn} 
+            <button
+              style={activeTab === 'search20' ? styles.activeMenuBtn : styles.menuBtn}
               onClick={() => setActiveTab('search20')}
             >
               + Search 2.0 Task
             </button>
-            <button 
-              style={activeTab === 'autocomplete' ? styles.activeMenuBtn : styles.menuBtn} 
+            <button
+              style={activeTab === 'autocomplete' ? styles.activeMenuBtn : styles.menuBtn}
               onClick={() => setActiveTab('autocomplete')}
             >
               + Auto Complete Task
             </button>
-            <button 
-              style={activeTab === 'poi' ? styles.activeMenuBtn : styles.menuBtn} 
+            <button
+              style={activeTab === 'poi' ? styles.activeMenuBtn : styles.menuBtn}
               onClick={() => setActiveTab('poi')}
             >
               + POI Evaluation Task
@@ -98,30 +99,37 @@ export default function AdminDashboard() {
 
           <div style={styles.menuGroup}>
             <h4 style={styles.menuLabel}>Management</h4>
-            <button 
-              style={activeTab === 'analytics' ? styles.activeMenuBtn : styles.menuBtn} 
+            <button
+              style={activeTab === 'analytics' ? styles.activeMenuBtn : styles.menuBtn}
               onClick={() => setActiveTab('analytics')}
             >
               <span style={styles.menuIcon}>📊</span> Rater Analytics
-              
+
             </button>
-            
-            <button 
-              style={activeTab === 'questionmanagement' ? styles.activeMenuBtn : styles.menuBtn} 
+
+            <button
+              style={activeTab === 'leaderboardprofile' ? styles.activeMenuBtn : styles.menuBtn}
+              onClick={() => setActiveTab('leaderboardprofile')}
+            >
+              <span style={styles.menuIcon}>🏆</span> Leaderboard & Profile
+            </button>
+
+            <button
+              style={activeTab === 'questionmanagement' ? styles.activeMenuBtn : styles.menuBtn}
               onClick={() => setActiveTab('questionmanagement')}
             >
               <span style={styles.menuIcon}>📝</span> Question Management
             </button>
 
-            <button 
-  style={activeTab === 'setmanagement' ? styles.activeMenuBtn : styles.menuBtn} 
-  onClick={() => setActiveTab('setmanagement')}
->
-  <span style={styles.menuIcon}>🗂️</span> Set Builder
-</button>
+            <button
+              style={activeTab === 'setmanagement' ? styles.activeMenuBtn : styles.menuBtn}
+              onClick={() => setActiveTab('setmanagement')}
+            >
+              <span style={styles.menuIcon}>🗂️</span> Set Builder
+            </button>
 
-            <button 
-              style={activeTab === 'usermanagement' ? styles.activeMenuBtn : styles.menuBtn} 
+            <button
+              style={activeTab === 'usermanagement' ? styles.activeMenuBtn : styles.menuBtn}
               onClick={() => setActiveTab('usermanagement')}
             >
               <span style={styles.menuIcon}>👥</span> User Management
@@ -135,11 +143,12 @@ export default function AdminDashboard() {
           {activeTab === 'autocomplete' && <div><h2>Auto Complete Builder Coming Soon</h2></div>}
           {activeTab === 'poi' && <div><h2>POI Task Builder Coming Soon</h2></div>}
           {activeTab === 'analytics' && <RaterAnalytics />}
-          
+          {activeTab === 'leaderboardprofile' && <RaterLeaderboardProfile />}
+
           {/* NEW: Replaced placeholder with the actual component! */}
           {activeTab === 'questionmanagement' && <QuestionManagement />}
           {activeTab === 'setmanagement' && <SetManagement />}
-          
+
           {activeTab === 'usermanagement' && <UserManagement />}
         </main>
       </div>
@@ -153,16 +162,16 @@ const styles = {
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#0f172a', padding: '16px 32px', color: 'white', flexShrink: 0 },
   headerTitle: { margin: 0, fontSize: '20px' },
   navBtn: { backgroundColor: 'transparent', border: '1px solid #475569', color: 'white', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' },
-  
+
   layout: { display: 'flex', flex: 1, overflow: 'hidden' },
-  
+
   sidebar: { width: '250px', backgroundColor: '#1e293b', color: 'white', display: 'flex', flexDirection: 'column', padding: '24px 0', flexShrink: 0 },
   menuGroup: { marginBottom: '32px' },
   menuLabel: { fontSize: '12px', textTransform: 'uppercase', color: '#94a3b8', margin: '0 0 12px 24px', letterSpacing: '0.05em' },
   menuBtn: { width: '100%', textAlign: 'left', backgroundColor: 'transparent', border: 'none', color: '#cbd5e1', padding: '10px 24px', cursor: 'pointer', fontSize: '14px', transition: 'background 0.2s', display: 'flex', alignItems: 'center' },
   activeMenuBtn: { width: '100%', textAlign: 'left', backgroundColor: '#334155', border: 'none', color: 'white', padding: '10px 24px', cursor: 'pointer', fontSize: '14px', borderLeft: '4px solid #3b82f6', display: 'flex', alignItems: 'center' },
-  
+
   menuIcon: { marginRight: '8px', fontSize: '16px' },
-  
+
   mainContent: { flex: 1, padding: '32px', overflowY: 'auto' }
 };

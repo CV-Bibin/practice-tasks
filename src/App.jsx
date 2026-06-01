@@ -7,6 +7,7 @@ import SimulatorSearch20 from './pages/SimulatorSearch20';
 import UserManagement from './pages/UserManagement'; 
 import ProtectedRoute from './components/shared/ProtectedRoute'; // <-- 1. Import the wrapper
 import { CustomDialogProvider } from "./components/shared/CustomDialogProvider";
+import RaterLeaderboardProfile from "./pages/RaterLeaderboardProfile";
 
 function App() {
   return (
@@ -36,6 +37,15 @@ function App() {
 
       <Route path="/simulate/:taskType" element={<Simulator />} />
       <Route path="/simulate/search20" element={<SimulatorSearch20 />} />
+
+      <Route
+  path="/admin/rater-performance"
+  element={
+    <ProtectedRoute allowedRoles={["admin"]}>
+      <RaterLeaderboardProfile />
+    </ProtectedRoute>
+  }
+/>
     </Routes>
   </CustomDialogProvider>
 </BrowserRouter>
