@@ -7,17 +7,18 @@ import {
   where,
   addDoc,
   serverTimestamp,
-  doc, 
-  setDoc, 
-  increment, 
-  getDoc,    
-  updateDoc, 
-  deleteDoc  
+  doc,
+  setDoc,
+  increment,
+  getDoc,
+  updateDoc,
+  deleteDoc
 } from "firebase/firestore";
 import { db, auth } from "../config/firebase"; // Ensure 'auth' is imported!
 import { onAuthStateChanged } from "firebase/auth";
 import TaskMapPreview from "../components/shared/TaskMapPreview";
 import { pinColors } from "../components/shared/TaskMapPreview";
+
 
 // --- FISHER-YATES SHUFFLE ---
 const shuffleArray = (array) => {
@@ -51,9 +52,9 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   const distance = R * c;
@@ -80,48 +81,50 @@ const addrLabels = {
 export default function SimulatorSearch20() {
   const navigate = useNavigate();
   const location = useLocation();
-  
+
   // NEW: Catch routing state
   const targetSet = location.state?.targetSet;
   const reviewMode = location.state?.reviewMode;
   const [moduleCompleted, setModuleCompleted] = useState(false);
   const returnPath = location.state?.returnPath || "/dashboard";
-const returnState = location.state?.returnState;
-  
+  const returnState = location.state?.returnState;
+
   const [tasks, setTasks] = useState([]);
   const [currentTaskIndex, setCurrentTaskIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  
+
+
 
   // NEW: Store past submissions for review mode
   const [reviewData, setReviewData] = useState(location.state?.reviewData || {});
-
+  const [validationErrors, setValidationErrors] = useState({});
+  const [customAlert, setCustomAlert] = useState("");
   const [answers, setAnswers] = useState({});
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [score, setScore] = useState({ correct: 0, total: 0 });
   const [showCompletionModal, setShowCompletionModal] = useState(false);
 
   useEffect(() => {
-  // Kick them out if they didn't click a real exam
-  if (!targetSet) {
-    alert("No exam set selected. Please launch from your dashboard.");
-    navigate("/dashboard");
-    return;
-  }
-
-  // Wait for Firebase Auth
-  const unsubscribe = onAuthStateChanged(auth, (user) => {
-    if (user) {
-      fetchTasksAndReviewData(user.uid);
+    // Kick them out if they didn't click a real exam
+    if (!targetSet) {
+      alert("No exam set selected. Please launch from your dashboard.");
+      navigate("/dashboard");
+      return;
     }
-  });
 
-  return () => unsubscribe();
-}, [targetSet, navigate]);
+    // Wait for Firebase Auth
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        fetchTasksAndReviewData(user.uid);
+      }
+    });
 
-const fetchTasksAndReviewData = async (confirmedUid) => {
+    return () => unsubscribe();
+  }, [targetSet, navigate]);
+
+  const fetchTasksAndReviewData = async (confirmedUid) => {
     try {
       setLoading(true);
       const q = query(collection(db, "tasks"), where("taskType", "==", "search_2_0"), where("group", "==", targetSet));
@@ -139,7 +142,7 @@ const fetchTasksAndReviewData = async (confirmedUid) => {
           where("taskGroup", "==", targetSet)
         );
         const subSnap = await getDocs(subQ);
-        
+
         let compiledReviewData = {};
         subSnap.forEach(doc => {
           const data = doc.data();
@@ -150,12 +153,12 @@ const fetchTasksAndReviewData = async (confirmedUid) => {
 
         setReviewData(compiledReviewData);
         setTasks(fetchedTasks);
-        
+
         // Inject the answers immediately
         if (fetchedTasks.length > 0) {
           initializeAnswers(fetchedTasks[0], compiledReviewData);
         }
-        
+
       } else if (confirmedUid) {
         // --- THE ANTI-CHEAT SESSION LOGIC FOR LIVE EXAMS ---
         const sessionRef = doc(db, 'users', confirmedUid, 'active_sessions', targetSet);
@@ -171,16 +174,16 @@ const fetchTasksAndReviewData = async (confirmedUid) => {
           });
           const savedIndex = sessionData.currentIndex || 0;
 
-setTasks(fetchedTasks);
+          setTasks(fetchedTasks);
 
-if (savedIndex >= fetchedTasks.length) {
-  await deleteDoc(doc(db, "users", confirmedUid, "active_sessions", targetSet));
-  setShowCompletionModal(true);
-  return;
-}
+          if (savedIndex >= fetchedTasks.length) {
+            await deleteDoc(doc(db, "users", confirmedUid, "active_sessions", targetSet));
+            setShowCompletionModal(true);
+            return;
+          }
 
-setCurrentTaskIndex(savedIndex);
-initializeAnswers(fetchedTasks[savedIndex]);
+          setCurrentTaskIndex(savedIndex);
+          initializeAnswers(fetchedTasks[savedIndex]);
         } else {
           // CREATE NEW SESSION
           fetchedTasks = shuffleArray(fetchedTasks);
@@ -202,7 +205,12 @@ initializeAnswers(fetchedTasks[savedIndex]);
   };
 
   const initializeAnswers = (task, pastData = reviewData) => {
+
+     setValidationErrors({});
+  setCustomAlert("");
     // NEW: If reviewing, inject their past answers and lock the form!
+
+
     if (reviewMode && pastData[task.id]) {
       setAnswers(pastData[task.id]);
       setIsSubmitted(true);
@@ -240,109 +248,202 @@ initializeAnswers(fetchedTasks[savedIndex]);
       };
     });
     setAnswers(initialAnswers);
-   setIsSubmitted(reviewMode);
+    setIsSubmitted(reviewMode);
   };
 
-const emptyAddrErrors = {
-  streetNum: false,
-  unit: false,
-  streetName: false,
-  subLoc: false,
-  loc: false,
-  region: false,
-  postal: false,
-  country: false,
-  notExist: false,
-  lang: false,
-  countrySpecific: false,
-  other: false,
-};
+  const emptyAddrErrors = {
+    streetNum: false,
+    unit: false,
+    streetName: false,
+    subLoc: false,
+    loc: false,
+    region: false,
+    postal: false,
+    country: false,
+    notExist: false,
+    lang: false,
+    countrySpecific: false,
+    other: false,
+  };
 
-const handleAnswerChange = (resultId, field, value) => {
-  if (isSubmitted) return;
+  const handleAnswerChange = (resultId, field, value) => {
+    if (isSubmitted) return;
 
-  setAnswers((prev) => {
-    const current = prev[resultId] || {};
+    setValidationErrors((prev) => {
+      const next = { ...prev };
+      delete next[`${resultId}.${field}`];
+      delete next[`${resultId}.nameIssue`];
+      delete next[`${resultId}.addrErrors`];
+      return next;
+    });
 
-    if (field === "poiClosed" && value === true) {
+
+    setAnswers((prev) => {
+      const current = prev[resultId] || {};
+
+      if (field === "poiClosed" && value === true) {
+        return {
+          ...prev,
+          [resultId]: {
+            ...current,
+            poiClosed: true,
+            nameAcc: null,
+            nameIssue: null,
+            categoryIssue: null,
+            addressAcc: null,
+            addrErrors: emptyAddrErrors,
+            pinAcc: null,
+          },
+        };
+      }
+
+      if (field === "poiClosed" && value === false) {
+        return {
+          ...prev,
+          [resultId]: {
+            ...current,
+            poiClosed: false,
+            nameAcc: "",
+            nameIssue: false,
+            categoryIssue: false,
+            addressAcc: "",
+            addrErrors: emptyAddrErrors,
+            pinAcc: "",
+          },
+        };
+      }
+
       return {
         ...prev,
         [resultId]: {
           ...current,
-          poiClosed: true,
-          nameAcc: null,
-          nameIssue: null,
-          categoryIssue: null,
-          addressAcc: null,
-          addrErrors: emptyAddrErrors,
-          pinAcc: null,
+          [field]: value,
         },
       };
-    }
-
-    if (field === "poiClosed" && value === false) {
-      return {
-        ...prev,
-        [resultId]: {
-          ...current,
-          poiClosed: false,
-          nameAcc: "",
-          nameIssue: false,
-          categoryIssue: false,
-          addressAcc: "",
-          addrErrors: emptyAddrErrors,
-          pinAcc: "",
-        },
-      };
-    }
-
-    return {
-      ...prev,
-      [resultId]: {
-        ...current,
-        [field]: value,
-      },
-    };
-  });
-};
+    });
+  };
   const handleGlobalChange = (field, value) => {
     if (isSubmitted) return;
+
+    setValidationErrors((prev) => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+
     setAnswers((prev) => ({ ...prev, [field]: value }));
   };
 
-const completeModule = async () => {
-  if (moduleCompleted) return;
+  const completeModule = async () => {
+    if (moduleCompleted) return;
 
-  setModuleCompleted(true);
+    setModuleCompleted(true);
 
-  try {
-    if (!reviewMode && auth.currentUser) {
-      const uid = auth.currentUser.uid;
+    try {
+      if (!reviewMode && auth.currentUser) {
+        const uid = auth.currentUser.uid;
 
-      await setDoc(
-        doc(db, "users", uid, "attempts", targetSet),
-        {
-          count: increment(1),
-          completedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+        await setDoc(
+          doc(db, "users", uid, "attempts", targetSet),
+          {
+            count: increment(1),
+            completedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
 
-      await deleteDoc(doc(db, "users", uid, "active_sessions", targetSet));
+        await deleteDoc(doc(db, "users", uid, "active_sessions", targetSet));
+      }
+    } catch (err) {
+      console.error("Failed to complete module:", err);
+    } finally {
+      setShowCompletionModal(true);
     }
-  } catch (err) {
-    console.error("Failed to complete module:", err);
-  } finally {
-    setShowCompletionModal(true);
-  }
-};
+  };
+  const hasValue = (value) =>
+    value !== undefined && value !== null && String(value).trim() !== "";
+
+  const hasAnyChecked = (obj = {}) => Object.values(obj).some(Boolean);
+
+  const validateCurrentTaskAnswers = () => {
+    const currentTask = tasks[currentTaskIndex];
+    const errors = {};
+
+    if (!hasValue(answers.isNavigational)) {
+      errors.isNavigational = "Please answer this question.";
+    }
+
+    currentTask.taskData.results.forEach((res, index) => {
+      const resultAns = answers[res.resultId] || {};
+      const label = `Result ${index + 1}`;
+
+      if (!hasValue(resultAns.relevance)) {
+        errors[`${res.resultId}.relevance`] = `${label}: Relevance is required.`;
+      }
+
+      if (!resultAns.poiClosed) {
+        if (!hasValue(resultAns.nameAcc)) {
+          errors[`${res.resultId}.nameAcc`] = `${label}: Name Accuracy is required.`;
+        }
+
+        if (
+          ["Incorrect", "Partially Correct"].includes(resultAns.nameAcc) &&
+          !resultAns.nameIssue &&
+          !resultAns.categoryIssue
+        ) {
+          errors[`${res.resultId}.nameIssue`] =
+            `${label}: Select at least one name/category issue.`;
+        }
+
+        if (!hasValue(resultAns.addressAcc)) {
+          errors[`${res.resultId}.addressAcc`] = `${label}: Address Accuracy is required.`;
+        }
+
+        if (
+          resultAns.addressAcc === "Incorrect" &&
+          !hasAnyChecked(resultAns.addrErrors)
+        ) {
+          errors[`${res.resultId}.addrErrors`] =
+            `${label}: Select at least one address error.`;
+        }
+
+        if (!hasValue(resultAns.pinAcc)) {
+          errors[`${res.resultId}.pinAcc`] = `${label}: Pin Accuracy is required.`;
+        }
+      }
+
+
+    });
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const getFieldError = (key) =>
+    validationErrors[key] ? (
+      <div style={styles.inlineError}>{validationErrors[key]}</div>
+    ) : null;
+
+  const getRequiredStyle = (baseStyle, key) =>
+    validationErrors[key]
+      ? {
+        ...baseStyle,
+        borderColor: "#ef4444",
+        backgroundColor: "#fff7ed",
+      }
+      : baseStyle;
+
   const submitRating = async () => {
     if (isSubmitted) {
       nextTask();
       return;
     }
-    
-    // Add this right after the if statement:
+
+    if (!validateCurrentTaskAnswers()) {
+      setCustomAlert("Please fill all mandatory fields before submitting.");
+      return;
+    }
+
     if (submitting) return;
     setSubmitting(true);
 
@@ -384,7 +485,7 @@ const completeModule = async () => {
 
       // Accuracy blocks (Only if open)
       if (!gold.poiClosed) {
-        
+
         // Name Accuracy
         catScores.name.t++;
         if (raterAns.nameAcc === gold.nameAccuracy) catScores.name.c++;
@@ -425,95 +526,95 @@ const completeModule = async () => {
     setIsSubmitted(true);
 
     // --- 5. Save Deep Analytics Payload to Firebase ---
-    
-     try {
-  if (!auth.currentUser) {
-    throw new Error("No authenticated user found");
-  }
 
-  const calcPercent = (c, t) => (t > 0 ? Math.round((c / t) * 100) : null);
-
-  await addDoc(collection(db, "rater_submissions"), {
-    userId: auth.currentUser.uid,
-    raterEmail: auth.currentUser.email,
-    taskId: currentTask.id,
-    taskGroup: targetSet,
-    taskType: "search_2_0",
-    submittedAt: serverTimestamp(),
-
-    overall: {
-      correct: correctCount,
-      total: totalQuestions,
-      accuracy: calcPercent(correctCount, totalQuestions),
-    },
-
-    categories: {
-      navigational: {
-        correct: catScores.navigational.c,
-        total: catScores.navigational.t,
-        accuracy: calcPercent(catScores.navigational.c, catScores.navigational.t),
-      },
-      poiClosed: {
-        correct: catScores.poiClosed.c,
-        total: catScores.poiClosed.t,
-        accuracy: calcPercent(catScores.poiClosed.c, catScores.poiClosed.t),
-      },
-      relevance: {
-        correct: catScores.relevance.c,
-        total: catScores.relevance.t,
-        accuracy: calcPercent(catScores.relevance.c, catScores.relevance.t),
-      },
-      nameAccuracy: {
-        correct: catScores.name.c,
-        total: catScores.name.t,
-        accuracy: calcPercent(catScores.name.c, catScores.name.t),
-      },
-      addressAccuracy: {
-        correct: catScores.address.c,
-        total: catScores.address.t,
-        accuracy: calcPercent(catScores.address.c, catScores.address.t),
-      },
-      pinAccuracy: {
-        correct: catScores.pin.c,
-        total: catScores.pin.t,
-        accuracy: calcPercent(catScores.pin.c, catScores.pin.t),
-      },
-    },
-
-    rawRaterAnswers: answers,
-  });
-
- if (!reviewMode) {
-  const nextIndex = currentTaskIndex + 1;
-
-  if (nextIndex >= tasks.length) {
-    await completeModule();
-  } else {
-    await updateDoc(
-      doc(db, "users", auth.currentUser.uid, "active_sessions", targetSet),
-      {
-        currentIndex: nextIndex,
+    try {
+      if (!auth.currentUser) {
+        throw new Error("No authenticated user found");
       }
-    );
-  }
-}
-} catch (err) {
-  console.error("Failed to save submission analytics:", err);
-} finally {
-  setSubmitting(false);
-}
-}; // closes submitRating
 
-const nextTask = async () => {
-  const nextIndex = currentTaskIndex + 1;
+      const calcPercent = (c, t) => (t > 0 ? Math.round((c / t) * 100) : null);
 
-  if (nextIndex < tasks.length) {
-    setCurrentTaskIndex(nextIndex);
-    initializeAnswers(tasks[nextIndex], reviewData);
-  } else {
-    await completeModule();
-  }
-};
+      await addDoc(collection(db, "rater_submissions"), {
+        userId: auth.currentUser.uid,
+        raterEmail: auth.currentUser.email,
+        taskId: currentTask.id,
+        taskGroup: targetSet,
+        taskType: "search_2_0",
+        submittedAt: serverTimestamp(),
+
+        overall: {
+          correct: correctCount,
+          total: totalQuestions,
+          accuracy: calcPercent(correctCount, totalQuestions),
+        },
+
+        categories: {
+          navigational: {
+            correct: catScores.navigational.c,
+            total: catScores.navigational.t,
+            accuracy: calcPercent(catScores.navigational.c, catScores.navigational.t),
+          },
+          poiClosed: {
+            correct: catScores.poiClosed.c,
+            total: catScores.poiClosed.t,
+            accuracy: calcPercent(catScores.poiClosed.c, catScores.poiClosed.t),
+          },
+          relevance: {
+            correct: catScores.relevance.c,
+            total: catScores.relevance.t,
+            accuracy: calcPercent(catScores.relevance.c, catScores.relevance.t),
+          },
+          nameAccuracy: {
+            correct: catScores.name.c,
+            total: catScores.name.t,
+            accuracy: calcPercent(catScores.name.c, catScores.name.t),
+          },
+          addressAccuracy: {
+            correct: catScores.address.c,
+            total: catScores.address.t,
+            accuracy: calcPercent(catScores.address.c, catScores.address.t),
+          },
+          pinAccuracy: {
+            correct: catScores.pin.c,
+            total: catScores.pin.t,
+            accuracy: calcPercent(catScores.pin.c, catScores.pin.t),
+          },
+        },
+
+        rawRaterAnswers: answers,
+      });
+
+      if (!reviewMode) {
+        const nextIndex = currentTaskIndex + 1;
+
+        if (nextIndex >= tasks.length) {
+          await completeModule();
+        } else {
+          await updateDoc(
+            doc(db, "users", auth.currentUser.uid, "active_sessions", targetSet),
+            {
+              currentIndex: nextIndex,
+            }
+          );
+        }
+      }
+    } catch (err) {
+      console.error("Failed to save submission analytics:", err);
+    } finally {
+      setSubmitting(false);
+    }
+  }; // closes submitRating
+
+  const nextTask = async () => {
+    const nextIndex = currentTaskIndex + 1;
+
+    if (nextIndex < tasks.length) {
+      setCurrentTaskIndex(nextIndex);
+      initializeAnswers(tasks[nextIndex], reviewData);
+    } else {
+      await completeModule();
+    }
+  };
   const getFeedbackStyle = (resultId, field, goldValue) => {
     if (!isSubmitted) return styles.select;
     const raterValue = resultId ? answers[resultId][field] : answers[field];
@@ -571,22 +672,36 @@ const nextTask = async () => {
   return (
     <div style={styles.container}>
 
+      {customAlert && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalBox}>
+            <p style={styles.modalText}>{customAlert}</p>
+            <button
+              style={styles.modalButton}
+              onClick={() => setCustomAlert("")}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* --- Custom Completion Box --- */}
       {showCompletionModal && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalBox}>
             <p style={styles.modalText}>{reviewMode ? "You have finished reviewing this module." : "no more tasks available"}</p>
-<button
-  style={styles.modalButton}
-  onClick={() => navigate(returnPath, { state: returnState })}
->
-  {returnPath === "/admin" ? "Return to Admin Report" : "Return to Dashboard"}
-</button>
+            <button
+              style={styles.modalButton}
+              onClick={() => navigate(returnPath, { state: returnState })}
+            >
+              {returnPath === "/admin" ? "Return to Admin Report" : "Return to Dashboard"}
+            </button>
           </div>
         </div>
       )}
 
-       {/* TOP HEADER */}
+      {/* TOP HEADER */}
       <header style={styles.topBar}>
         <div style={styles.topBarLeft}>
           <div style={styles.headerBlock}>
@@ -607,34 +722,34 @@ const nextTask = async () => {
 
         <div style={styles.topBarRight}>
           {/* NEW: Show badge if in review mode */}
-          {reviewMode && <span style={{backgroundColor: '#fef08a', color: '#854d0e', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', marginRight: '8px'}}>REVIEW MODE</span>}
-          
+          {reviewMode && <span style={{ backgroundColor: '#fef08a', color: '#854d0e', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', marginRight: '8px' }}>REVIEW MODE</span>}
+
           <button style={styles.btnBlue}>Rating Guidelines</button>
-<button
-  onClick={() => navigate(returnPath, { state: returnState })}
-  style={styles.btnLight}
->
-  {returnPath === "/admin" ? "Exit Review" : "Release Survey"}
-</button>
+          <button
+            onClick={() => navigate(returnPath, { state: returnState })}
+            style={styles.btnLight}
+          >
+            {returnPath === "/admin" ? "Exit Review" : "Release Survey"}
+          </button>
 
           {/* NEW: Toggle button logic based on Review Mode */}
           {!reviewMode ? (
             <button
-  onClick={submitRating}
-  style={styles.btnGreen}
-  disabled={submitting}
->
-  {submitting
-    ? "Submitting..."
-    : isSubmitted
-      ? currentTaskIndex === tasks.length - 1
-        ? "Finish Module"
-        : "Load Next Task"
-      : "Submit Rating"}
-</button>
+              onClick={submitRating}
+              style={styles.btnGreen}
+              disabled={submitting}
+            >
+              {submitting
+                ? "Submitting..."
+                : isSubmitted
+                  ? currentTaskIndex === tasks.length - 1
+                    ? "Finish Module"
+                    : "Load Next Task"
+                  : "Submit Rating"}
+            </button>
           ) : (
             <button onClick={nextTask} style={styles.btnGreen}>
-               {currentTaskIndex === tasks.length - 1 ? "Finish Review" : "Next Question"}
+              {currentTaskIndex === tasks.length - 1 ? "Finish Review" : "Next Question"}
             </button>
           )}
 
@@ -737,6 +852,8 @@ const nextTask = async () => {
                   Correct Answer: {taskData.isNavigational}
                 </div>
               )}
+
+            {getFieldError("isNavigational")}
           </div>
 
           <hr style={styles.divider} />
@@ -820,7 +937,7 @@ const nextTask = async () => {
                   </tbody>
                 </table>
 
-               {/* Form Controls */}
+                {/* Form Controls */}
                 <div style={styles.ratingSection}>
                   <label style={styles.checkboxItem}>
                     <input
@@ -853,29 +970,28 @@ const nextTask = async () => {
                     Business/POI is closed or does not exist
                   </label>
                   {isSubmitted && (
-  <div
-    style={{
-      fontSize: "12px",
-      fontWeight: "bold",
-      marginTop: "-4px",
-      marginBottom: "8px",
-      color: raterAns.poiClosed === gold.poiClosed ? "#16a34a" : "#ef4444",
-    }}
-  >
-    {raterAns.poiClosed === gold.poiClosed
-      ? "Correct"
-      : `Correct Answer: ${gold.poiClosed ? "Checked" : "Unchecked"}`}
-  </div>
-)}
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        fontWeight: "bold",
+                        marginTop: "-4px",
+                        marginBottom: "8px",
+                        color: raterAns.poiClosed === gold.poiClosed ? "#16a34a" : "#ef4444",
+                      }}
+                    >
+                      {raterAns.poiClosed === gold.poiClosed
+                        ? "Correct"
+                        : `Correct Answer: ${gold.poiClosed ? "Checked" : "Unchecked"}`}
+                    </div>
+                  )}
 
                   {/* 1. RELEVANCE BLOCK */}
                   <div style={styles.formGroup}>
                     <label style={styles.inputLabel}>Relevance</label>
                     <select
-                      style={getFeedbackStyle(
-                        res.resultId,
-                        "relevance",
-                        gold.relevance,
+                      style={getRequiredStyle(
+                        getFeedbackStyle(res.resultId, "relevance", gold.relevance),
+                        `${res.resultId}.relevance`
                       )}
                       value={raterAns.relevance}
                       onChange={(e) =>
@@ -894,6 +1010,7 @@ const nextTask = async () => {
                       <option value="Acceptable">Acceptable</option>
                       <option value="Bad">Bad</option>
                     </select>
+                    {getFieldError(`${res.resultId}.relevance`)}
 
                     {/* Relevance Granular Feedback */}
                     {isSubmitted && (
@@ -925,39 +1042,39 @@ const nextTask = async () => {
                     {["Good", "Acceptable", "Bad"].includes(
                       raterAns.relevance,
                     ) && (
-                      <div style={styles.subCheckboxes}>
-                        <label style={styles.checkboxItem}>
-                          <input
-                            type="checkbox"
-                            checked={raterAns.relUserIntent}
-                            onChange={() =>
-                              handleAnswerChange(
-                                res.resultId,
-                                "relUserIntent",
-                                !raterAns.relUserIntent,
-                              )
-                            }
-                            disabled={isSubmitted}
-                          />{" "}
-                          User intent issue
-                        </label>
-                        <label style={styles.checkboxItem}>
-                          <input
-                            type="checkbox"
-                            checked={raterAns.relDistance}
-                            onChange={() =>
-                              handleAnswerChange(
-                                res.resultId,
-                                "relDistance",
-                                !raterAns.relDistance,
-                              )
-                            }
-                            disabled={isSubmitted}
-                          />{" "}
-                          Distance/Prominence issue
-                        </label>
-                      </div>
-                    )}
+                        <div style={styles.subCheckboxes}>
+                          <label style={styles.checkboxItem}>
+                            <input
+                              type="checkbox"
+                              checked={raterAns.relUserIntent}
+                              onChange={() =>
+                                handleAnswerChange(
+                                  res.resultId,
+                                  "relUserIntent",
+                                  !raterAns.relUserIntent,
+                                )
+                              }
+                              disabled={isSubmitted}
+                            />{" "}
+                            User intent issue
+                          </label>
+                          <label style={styles.checkboxItem}>
+                            <input
+                              type="checkbox"
+                              checked={raterAns.relDistance}
+                              onChange={() =>
+                                handleAnswerChange(
+                                  res.resultId,
+                                  "relDistance",
+                                  !raterAns.relDistance,
+                                )
+                              }
+                              disabled={isSubmitted}
+                            />{" "}
+                            Distance/Prominence issue
+                          </label>
+                        </div>
+                      )}
                   </div>
 
                   {/* 2. NAME ACCURACY BLOCK */}
@@ -969,11 +1086,12 @@ const nextTask = async () => {
                   >
                     <label style={styles.inputLabel}>Name Accuracy</label>
                     <select
-                      style={
-  raterAns.poiClosed || gold.poiClosed
-    ? styles.select
-    : getFeedbackStyle(res.resultId, "nameAcc", gold.nameAccuracy)
-}
+                      style={getRequiredStyle(
+                        raterAns.poiClosed || gold.poiClosed
+                          ? styles.select
+                          : getFeedbackStyle(res.resultId, "nameAcc", gold.nameAccuracy),
+                        `${res.resultId}.nameAcc`
+                      )}
                       value={raterAns.nameAcc ?? ""}
                       onChange={(e) =>
                         handleAnswerChange(
@@ -993,6 +1111,8 @@ const nextTask = async () => {
                       <option value="Incorrect">Incorrect</option>
                       <option value="Can't Verify">Can't Verify</option>
                     </select>
+                    {getFieldError(`${res.resultId}.nameAcc`)}
+                    {getFieldError(`${res.resultId}.nameIssue`)}
 
                     {/* Name Accuracy Granular Feedback */}
                     {isSubmitted && !raterAns.poiClosed && (
@@ -1066,12 +1186,13 @@ const nextTask = async () => {
                   >
                     <label style={styles.inputLabel}>Address Accuracy</label>
                     <select
-                     style={
-  raterAns.poiClosed || gold.poiClosed
-    ? styles.select
-    : getFeedbackStyle(res.resultId, "addressAcc", gold.addressAccuracy)
-}
-                     value={raterAns.addressAcc ?? ""}
+                      style={getRequiredStyle(
+                        raterAns.poiClosed || gold.poiClosed
+                          ? styles.select
+                          : getFeedbackStyle(res.resultId, "addressAcc", gold.addressAccuracy),
+                        `${res.resultId}.addressAcc`
+                      )}
+                      value={raterAns.addressAcc ?? ""}
                       onChange={(e) =>
                         handleAnswerChange(
                           res.resultId,
@@ -1089,6 +1210,8 @@ const nextTask = async () => {
                       <option value="Incorrect">Incorrect</option>
                       <option value="Can't Verify">Can't Verify</option>
                     </select>
+                    {getFieldError(`${res.resultId}.addressAcc`)}
+                    {getFieldError(`${res.resultId}.addrErrors`)}
 
                     {/* Address Accuracy Granular Feedback */}
                     {isSubmitted && !raterAns.poiClosed && (
@@ -1098,33 +1221,32 @@ const nextTask = async () => {
                             Correct Answer: {gold.addressAccuracy}
                           </div>
                         )}
-                       {gold.addressAccuracy === "Incorrect" && (() => {
-  const addrKeys = Object.keys(addrLabels);
+                        {gold.addressAccuracy === "Incorrect" && (() => {
+                          const addrKeys = Object.keys(addrLabels);
 
-  const addressErrorsCorrect = addrKeys.every(
-    (key) =>
-      Boolean(raterAns.addrErrors?.[key]) ===
-      Boolean(gold.addressErrors?.[key])
-  );
+                          const addressErrorsCorrect = addrKeys.every(
+                            (key) =>
+                              Boolean(raterAns.addrErrors?.[key]) ===
+                              Boolean(gold.addressErrors?.[key])
+                          );
 
-  return (
-    <div
-      style={{
-        ...styles.inlineError,
-        color: addressErrorsCorrect ? "#16a34a" : "#ef4444",
-      }}
-    >
-      {addressErrorsCorrect
-        ? "Address error flags correct"
-        : `Correct Address Errors: ${
-            addrKeys
-              .filter((k) => gold.addressErrors?.[k])
-              .map((k) => `[x] ${addrLabels[k]}`)
-              .join(", ") || "None"
-          }`}
-    </div>
-  );
-})()}
+                          return (
+                            <div
+                              style={{
+                                ...styles.inlineError,
+                                color: addressErrorsCorrect ? "#16a34a" : "#ef4444",
+                              }}
+                            >
+                              {addressErrorsCorrect
+                                ? "Address error flags correct"
+                                : `Correct Address Errors: ${addrKeys
+                                  .filter((k) => gold.addressErrors?.[k])
+                                  .map((k) => `[x] ${addrLabels[k]}`)
+                                  .join(", ") || "None"
+                                }`}
+                            </div>
+                          );
+                        })()}
                       </>
                     )}
 
@@ -1145,10 +1267,18 @@ const nextTask = async () => {
                                 checked={raterAns.addrErrors?.[errorKey] || false}
                                 onChange={() => {
                                   if (isSubmitted) return;
+
+                                  setValidationErrors((prev) => {
+                                    const next = { ...prev };
+                                    delete next[`${res.resultId}.addrErrors`];
+                                    return next;
+                                  });
+
                                   const newErrors = {
                                     ...raterAns.addrErrors,
                                     [errorKey]: !raterAns.addrErrors[errorKey],
                                   };
+
                                   setAnswers((prev) => ({
                                     ...prev,
                                     [res.resultId]: {
@@ -1175,11 +1305,12 @@ const nextTask = async () => {
                   >
                     <label style={styles.inputLabel}>Pin Accuracy</label>
                     <select
-                      style={
-  raterAns.poiClosed || gold.poiClosed
-    ? styles.select
-    : getFeedbackStyle(res.resultId, "pinAcc", gold.pinAccuracy)
-}
+                      style={getRequiredStyle(
+                        raterAns.poiClosed || gold.poiClosed
+                          ? styles.select
+                          : getFeedbackStyle(res.resultId, "pinAcc", gold.pinAccuracy),
+                        `${res.resultId}.pinAcc`
+                      )}
                       value={raterAns.pinAcc ?? ""}
                       onChange={(e) =>
                         handleAnswerChange(
@@ -1197,6 +1328,7 @@ const nextTask = async () => {
                       <option value="Wrong">Wrong</option>
                       <option value="Can't Verify">Can't Verify</option>
                     </select>
+                    {getFieldError(`${res.resultId}.pinAcc`)}
                     {isSubmitted &&
                       !raterAns.poiClosed &&
                       raterAns.pinAcc !== gold.pinAccuracy && (
@@ -1209,15 +1341,15 @@ const nextTask = async () => {
                   {/* 5. COMMENT BLOCK */}
                   <div style={styles.formGroup}>
                     <label style={styles.inputLabel}>Comment and Link</label>
-                  <textarea
-  style={styles.textarea}
-  value={raterAns.comment}
-  onChange={(e) =>
-    handleAnswerChange(res.resultId, "comment", e.target.value)
-  }
-  placeholder="Add evaluation comments here..."
-  disabled={isSubmitted}
-/>
+                    <textarea
+                      style={styles.textarea}
+                      value={raterAns.comment}
+                      onChange={(e) =>
+                        handleAnswerChange(res.resultId, "comment", e.target.value)
+                      }
+                      placeholder="Add evaluation comments here..."
+                      disabled={isSubmitted}
+                    />
                   </div>
                 </div>
               </div>
